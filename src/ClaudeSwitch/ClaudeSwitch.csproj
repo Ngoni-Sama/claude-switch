@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>ClaudeSwitch</RootNamespace>
+    <AssemblyName>ClaudeSwitch</AssemblyName>
+    <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Don't mark the exe CET-compatible: some Windows builds (e.g. pre-release
+         ones) only partly support CET and .NET then refuses to start. -->
+    <CETCompat>false</CETCompat>
+
+    <Version>2.3.0</Version>
+    <Product>Claude Switch</Product>
+    <Company>Ngoni Maphosa</Company>
+    <Authors>Ngoni Maphosa (Ngoni-Sama)</Authors>
+    <Copyright>Copyright (c) 2026 Ngoni Maphosa</Copyright>
+    <Description>Run several Claude Desktop accounts side by side. Unofficial; not affiliated with Anthropic.</Description>
+
+    <!-- Releases are published as one self-contained file per OS, so there is
+         nothing else to install. See packaging/ for the publish commands. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.22" />
+    <PackageReference Include="System.Management" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ClaudeSwitch.Tests" />
+  </ItemGroup>
+
+</Project>

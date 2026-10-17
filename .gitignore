@@ -1,0 +1,13 @@
+bin/
+obj/
+artifacts/
+*.user
+.vs/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+support/node_modules/
+support/.wrangler/
+support/.dev.vars
+TestResults/

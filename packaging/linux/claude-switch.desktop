@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Claude Switch
+GenericName=Claude account switcher
+Comment=Run several Claude Desktop accounts side by side
+Exec=claude-switch
+Icon=claude-switch
+Terminal=false
+Categories=Utility;Development;
+Keywords=claude;accounts;profiles;switch;
+StartupWMClass=ClaudeSwitch
