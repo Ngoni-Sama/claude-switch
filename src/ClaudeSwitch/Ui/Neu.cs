@@ -1,7 +1,7 @@
-// Design kit, after pc_info: flat tiles with a thin border and a small radius,
-// bold uppercase tile titles, small grey labels over larger values, nested
-// inner panels, thin bordered bars and ring gauges (Ring.cs). Two palettes
-// (Light default, Dark).
+// Design kit: an Apple-like look. Soft gradient backgrounds, white (or
+// graphite) cards with gentle shadows and generous radii, sentence-case titles,
+// grey labels over values, gradient primary buttons and ring gauges (Ring.cs).
+// Two palettes (Light default, Dark).
 //
 // Contrast (WCAG, on Card and Inner): every text colour passes AA 4.5:1.
 // State is never shown by colour alone: dots and rings carry a text label.
@@ -23,7 +23,7 @@ public class Palette
     public string Name;
     public bool IsDark;
     public Color Bg, Hover, Hi, Lo, Well, Line, Text, Muted, Accent, OnAccent, Good, Warn, Bad;
-    public Color Card, Inner, Border, Track, AccentSoft;
+    public Color Card, Inner, Border, Track, AccentSoft, Accent2, BgTop, BgBottom, Sidebar;
 }
 
 public static class Neu
@@ -31,19 +31,21 @@ public static class Neu
     public static readonly Palette Light = new()
     {
         Name = "light", IsDark = false,
-        Bg = C(0xF7F8FA), Card = C(0xEFF0F3), Inner = C(0xE5E7EB), Border = C(0xDADDE2), Track = C(0xD2D6DC),
-        Hover = C(0xE6E8EC), Hi = C(0xFFFFFF), Lo = C(0xDADDE2), Well = C(0xE5E7EB), Line = C(0xD5D9DF),
-        Text = C(0x1B1F24), Muted = C(0x555D6A), Accent = C(0x0A62A0), AccentSoft = C(0xDCE9F4), OnAccent = C(0xFFFFFF),
-        Good = C(0x0B6B1F), Warn = C(0x825400), Bad = C(0xB0261F),
+        Bg = C(0xF5F5F7), BgTop = C(0xFAFBFD), BgBottom = C(0xEEF0F6), Sidebar = C(0xEDEFF4),
+        Card = C(0xFFFFFF), Inner = C(0xF2F3F7), Border = C(0xE3E4EA), Track = C(0xE3E5EB),
+        Hover = C(0xE6E8EE), Hi = C(0xFFFFFF), Lo = C(0xD8DAE1), Well = C(0xF2F3F7), Line = C(0xE5E6EB),
+        Text = C(0x1D1D1F), Muted = C(0x5E5E65), Accent = C(0x0066CC), Accent2 = C(0x5E5CE6), AccentSoft = C(0xE5EFFB), OnAccent = C(0xFFFFFF),
+        Good = C(0x1D7A35), Warn = C(0x9A5B00), Bad = C(0xC4161C),
     };
 
     public static readonly Palette Dark = new()
     {
         Name = "dark", IsDark = true,
-        Bg = C(0x17181B), Card = C(0x212327), Inner = C(0x2A2D32), Border = C(0x34373D), Track = C(0x3B3F46),
-        Hover = C(0x2D3036), Hi = C(0x2A2D32), Lo = C(0x0F1012), Well = C(0x2A2D32), Line = C(0x363940),
-        Text = C(0xECEEF1), Muted = C(0xA9AFB9), Accent = C(0x4DB0F2), AccentSoft = C(0x1D3447), OnAccent = C(0x0A1520),
-        Good = C(0x5BD27A), Warn = C(0xF2C14E), Bad = C(0xFF7B76),
+        Bg = C(0x1C1C1E), BgTop = C(0x202024), BgBottom = C(0x141416), Sidebar = C(0x232327),
+        Card = C(0x2C2C2E), Inner = C(0x38383C), Border = C(0x3A3A3E), Track = C(0x48484C),
+        Hover = C(0x3A3A3E), Hi = C(0x3A3A3E), Lo = C(0x0E0E10), Well = C(0x38383C), Line = C(0x3A3A3E),
+        Text = C(0xF5F5F7), Muted = C(0xA1A1A8), Accent = C(0x2E9BFF), Accent2 = C(0x7D7AFF), AccentSoft = C(0x1B3550), OnAccent = C(0xFFFFFF),
+        Good = C(0x32D74B), Warn = C(0xFFB340), Bad = C(0xFF6961),
     };
 
     public static Palette P { get; private set; } = Light;
@@ -76,35 +78,49 @@ public static class Neu
     static string Hex(Color c) => "#" + c.R.ToString("X2") + c.G.ToString("X2") + c.B.ToString("X2");
     static string Hex(Color c, byte alpha) => "#" + alpha.ToString("X2") + c.R.ToString("X2") + c.G.ToString("X2") + c.B.ToString("X2");
 
-    // Flat look: no shadows any more. Kept for callers.
     public static BoxShadows RaisedShadow(double d) => default;
     public static BoxShadows InsetShadow(double d) => default;
+
+    // A soft two-layer shadow for cards (none in dark mode, where it reads as dirt).
+    public static BoxShadows CardShadow => P.IsDark ? default : BoxShadows.Parse("0 1 2 0 #0D000000, 0 8 24 0 #12000000");
+
+    // The window and the sidebar: very gentle vertical gradients.
+    public static IBrush PageBrush => Gradient(P.BgTop, P.BgBottom, vertical: true);
+    public static IBrush SidebarBrush => Gradient(P.Sidebar, Mix(P.Sidebar, P.BgBottom, 0.6), vertical: true);
+    public static IBrush AccentBrush => Gradient(P.Accent, P.Accent2);
+
+    public static IBrush Gradient(Color a, Color b, bool vertical = false) => new LinearGradientBrush
+    {
+        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+        EndPoint = vertical ? new RelativePoint(0, 1, RelativeUnit.Relative) : new RelativePoint(1, 1, RelativeUnit.Relative),
+        GradientStops = { new GradientStop(a, 0), new GradientStop(b, 1) },
+    };
 
     public static Color UsageColor(int pct) => pct >= 95 ? P.Bad : pct >= 75 ? P.Warn : P.Accent;
 
     // ---- builders ----------------------------------------------------------------
 
-    // A tile. (Named for the old raised card; radius/depth are ignored now.)
+    // A card. (Named for the old raised card; radius/depth are ignored.)
     public static Border Raised(Control child, double radius = 22, double depth = 8, Thickness? padding = null) => new()
     {
-        Background = B(P.Card), BorderBrush = B(P.Border), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8),
-        Padding = padding ?? new Thickness(22, 20), Child = child,
+        Background = B(P.Card), BorderBrush = B(P.Border), BorderThickness = new Thickness(P.IsDark ? 1 : 0.6), CornerRadius = new CornerRadius(16),
+        BoxShadow = CardShadow, Padding = padding ?? new Thickness(22, 20), Child = child,
     };
 
-    public static Border Tile(Control child, Thickness? padding = null) => Raised(child, 8, 0, padding ?? new Thickness(20, 18, 20, 14));
+    public static Border Tile(Control child, Thickness? padding = null) => Raised(child, 16, 0, padding ?? new Thickness(22, 20, 22, 16));
 
     // The darker panel nested in a tile.
     public static Border Inset(Control child, double radius = 18, Thickness? padding = null) => new()
     {
-        Background = B(P.Inner), CornerRadius = new CornerRadius(6),
+        Background = B(P.Inner), CornerRadius = new CornerRadius(12),
         Padding = padding ?? new Thickness(18, 12), Child = child,
     };
 
-    // "PC DETAILS"-style tile title.
+    // Card and page titles, in sentence case.
     public static TextBlock Heading(string text, double size = 17) => new()
     {
-        Text = (text ?? "").ToUpperInvariant(), FontSize = size, FontWeight = FontWeight.Bold, Foreground = B(P.Text),
-        TextWrapping = TextWrapping.Wrap,
+        Text = text ?? "", FontSize = size + 1, FontWeight = FontWeight.SemiBold, Foreground = B(P.Text),
+        TextWrapping = TextWrapping.Wrap, LetterSpacing = -0.2,
     };
 
     // Small grey label over a larger value.
@@ -190,8 +206,8 @@ public class NeuButton : Border
         Focusable = true;
         IsTabStop = true;
         Cursor = new Cursor(StandardCursorType.Hand);
-        CornerRadius = new CornerRadius(6);
-        Padding = new Thickness(14, 7);
+        CornerRadius = new CornerRadius(10);
+        Padding = new Thickness(15, 7);
         MinHeight = 34;
         BorderThickness = new Thickness(1);
         label = Neu.T(text, fontSize, null, FontWeight.SemiBold);
@@ -227,12 +243,21 @@ public class NeuButton : Border
 
     void Paint()
     {
-        Color bg = primary ? (down ? Neu.Mix(Neu.P.Accent, Neu.P.Text, 0.15) : IsPointerOver ? Neu.Mix(Neu.P.Accent, Neu.P.Text, 0.08) : Neu.P.Accent)
-                 : selected ? Neu.P.AccentSoft : down ? Neu.P.Inner : IsPointerOver ? Neu.P.Hover : Neu.P.Card;
-        Background = Neu.B(bg);
+        if (primary)
+        {
+            Background = down ? Neu.Gradient(Neu.Mix(Neu.P.Accent, Neu.P.Text, 0.2), Neu.Mix(Neu.P.Accent2, Neu.P.Text, 0.2))
+                       : IsPointerOver ? Neu.Gradient(Neu.Mix(Neu.P.Accent, Neu.P.Text, 0.08), Neu.Mix(Neu.P.Accent2, Neu.P.Text, 0.08))
+                       : Neu.AccentBrush;
+            BoxShadow = Neu.P.IsDark ? default : BoxShadows.Parse("0 2 8 0 #330066CC");
+        }
+        else
+        {
+            Background = Neu.B(selected ? Neu.P.AccentSoft : down ? Neu.Mix(Neu.P.Inner, Neu.P.Text, 0.1) : IsPointerOver ? Neu.P.Hover : Neu.P.Inner);
+            BoxShadow = default;
+        }
         label.Foreground = Neu.B(primary ? Neu.P.OnAccent : selected ? Neu.P.Accent : Neu.P.Text);
         bool ring = IsFocused && IsKeyboardFocusVisible();
-        BorderBrush = Neu.B(ring ? Neu.P.Text : primary || selected ? Neu.P.Accent : Neu.P.Border);
+        BorderBrush = ring ? Neu.B(Neu.P.Accent) : Brushes.Transparent;
     }
 
     bool IsKeyboardFocusVisible() => IsFocused;

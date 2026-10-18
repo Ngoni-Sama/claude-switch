@@ -20,7 +20,9 @@
 //   PUT    /v1/keys/:addr                  { ecdh, sig, secretHash, ts, proof }   register
 //   GET    /v1/keys/:addr                  { ecdh, sig }
 //   POST   /v1/mail/:to                    { header, signature, size, parts } -> { id, uploadToken }
-//   PUT    /v1/mail/:to/:id/:n             raw bytes, X-Upload-Token
+//   PUT    /v1/mail/:to/:id/:n             X-Upload-Token; base64 text (X-Part-Encoding: base64), or raw bytes
+//                                           (older apps). Text is stored and served as-is: the Worker never
+//                                           converts a part, which keeps it inside the free plan's CPU limit.
 //   GET    /v1/mail/:me                    Authorization: Mailbox <secret> -> { messages }
 //   GET    /v1/mail/:me/:id/:n             Authorization -> raw bytes
 //   DELETE /v1/mail/:me/:id                Authorization
@@ -65,7 +67,7 @@ export async function addressOf(ecdh, sig) {
 
 const validAddr = a => /^[0-9A-HJKMNP-TV-Z]{24}$/.test(a);
 
-async function authorized(env, req, addr) {
+async function authorized(env, req, addr, touch = false) {
   const m = /^Mailbox\s+(\S+)$/.exec(req.headers.get('authorization') || '');
   if (!m) return false;
   const row = await env.DB.prepare('SELECT secret_hash FROM mailbox WHERE addr = ?').bind(addr).first();
@@ -74,7 +76,7 @@ async function authorized(env, req, addr) {
   if (given.length !== row.secret_hash.length) return false;
   let diff = 0;
   for (let i = 0; i < given.length; i++) diff |= given.charCodeAt(i) ^ row.secret_hash.charCodeAt(i);
-  if (diff === 0) await env.DB.prepare('UPDATE mailbox SET seen = ? WHERE addr = ?').bind(now(), addr).run();
+  if (diff === 0 && touch) await env.DB.prepare('UPDATE mailbox SET seen = ? WHERE addr = ?').bind(now(), addr).run();
   return diff === 0;
 }
 
@@ -164,8 +166,15 @@ async function putPart(env, req, to, id, n) {
   const token = req.headers.get('x-upload-token') || '';
   if (hex(await sha256(b64d(token))) !== msg.upload_hash) return fail(403, 'bad upload token');
   if (!(n >= 0 && n < msg.parts)) return fail(400, 'bad part');
-  const data = new Uint8Array(await req.arrayBuffer());
-  if (data.length === 0 || data.length > MAX_PART + 1024) return fail(413, 'part too large');
+  let data;
+  if ((req.headers.get('x-part-encoding') || '') === 'base64') {
+    data = await req.text();
+    if (data.length === 0 || data.length > Math.ceil((MAX_PART + 1024) / 3) * 4 + 4 || !/^[A-Za-z0-9+/=_-]+$/.test(data.slice(0, 64)))
+      return fail(413, 'part too large');
+  } else {
+    data = new Uint8Array(await req.arrayBuffer());
+    if (data.length === 0 || data.length > MAX_PART + 1024) return fail(413, 'part too large');
+  }
   const r = await env.DB.prepare('INSERT OR IGNORE INTO part (msg_id, n, data) VALUES (?, ?, ?)').bind(id, n, data).run();
   if (r.meta.changes > 0) await env.DB.prepare('UPDATE message SET received = received + 1 WHERE id = ?').bind(id).run();
   return json({ ok: true });
@@ -186,6 +195,8 @@ async function getPart(env, me, id, n) {
   const row = await env.DB.prepare('SELECT p.data FROM part p JOIN message m ON m.id = p.msg_id WHERE m.id = ? AND m.to_addr = ? AND p.n = ?')
     .bind(id, me, n).first();
   if (!row) return fail(404, 'no such part');
+  if (typeof row.data === 'string')
+    return new Response(row.data, { headers: { 'content-type': 'text/plain', 'x-part-encoding': 'base64' } });
   const data = row.data instanceof ArrayBuffer ? new Uint8Array(row.data) : Uint8Array.from(row.data);
   return new Response(data, { headers: { 'content-type': 'application/octet-stream' } });
 }
@@ -215,7 +226,7 @@ export default {
       if (p[1] === 'mail') {
         if (p.length === 3 && req.method === 'POST') return post(env, req, addr);
         if (p.length === 5 && req.method === 'PUT') return putPart(env, req, addr, p[3], Number(p[4]));
-        if (!await authorized(env, req, addr)) return fail(401, 'not your mailbox');
+        if (!await authorized(env, req, addr, p.length === 3)) return fail(401, 'not your mailbox');
         if (p.length === 3 && req.method === 'GET') return list(env, addr);
         if (p.length === 5 && req.method === 'GET') return getPart(env, addr, p[3], Number(p[4]));
         if (p.length === 4 && req.method === 'DELETE') return remove(env, p[3], addr);

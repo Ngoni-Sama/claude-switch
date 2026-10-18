@@ -162,14 +162,18 @@ public class LinkEndToEndTests : IDisposable
         // A profile with Claude Desktop settings in it.
         string data = Path.Combine(root, "profile-data");
         Directory.CreateDirectory(data);
-        File.WriteAllText(Path.Combine(data, "claude_desktop_config.json"), "{\"mcpServers\":{\"files\":{\"command\":\"npx\"}}}");
+        // ~3 MB that doesn't compress, so the transfer spans several parts sent in parallel.
+        string bulk = Convert.ToBase64String(RandomNumberGenerator.GetBytes(2_400_000));
+        File.WriteAllText(Path.Combine(data, "claude_desktop_config.json"), "{\"mcpServers\":{\"files\":{\"command\":\"npx\"}},\"bulk\":\"" + bulk + "\"}");
+        var reports = new List<LinkProgress>();
         File.WriteAllText(Path.Combine(data, "config.json"), "{\"oauth:tokenCacheV2\":\"SECRET\",\"theme\":\"dark\"}");
         var profile = new ProfileEntry { Name = "Work", DataDir = data };
         long size = await Link.SendProfiles(peer, new ExportOptions
         {
             Profiles = { profile }, Sessions = false, Memory = false, CodeConfig = false, DesktopSettings = true,
-        }, null);
-        Assert.True(size > 0);
+        }, p => { lock (reports) reports.Add(p); });
+        Assert.True(size > 2_000_000, "transfer was " + size);
+        Assert.Contains(reports, r => r.Total == size && r.Done == size);   // progress reached 100%
 
         As("harare");
         await Link.Refresh();
@@ -186,6 +190,8 @@ public class LinkEndToEndTests : IDisposable
             using var zip = System.IO.Compression.ZipFile.OpenRead(info.ZipPath);
             string cfg = new StreamReader(zip.GetEntry("profiles/0/data/config.json").Open()).ReadToEnd();
             Assert.DoesNotContain("SECRET", cfg);   // sign-ins never travel
+            string mcp = new StreamReader(zip.GetEntry("profiles/0/data/claude_desktop_config.json").Open()).ReadToEnd();
+            Assert.Contains(bulk, mcp);             // every part arrived, in order
         }
         Assert.Empty(Link.Inbox);
 

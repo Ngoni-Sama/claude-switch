@@ -15,3 +15,6 @@ database_id = "859d77fc-4219-4d67-b2b2-8772089c7f86"
 
 [triggers]
 crons = ["17 3 * * *"]   # daily clean-up of expired transfers
+
+[observability]
+enabled = true   # keep request logs in the dashboard

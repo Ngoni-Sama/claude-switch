@@ -536,7 +536,18 @@ public static class Shell
                 {
                     after.Stop();
                     Save(main, Path.Combine(dir, "dashboard-" + Neu.P.Name + "-lower.png"));
-                    Exit();
+                    // Then each sidebar page.
+                    var pages = new Queue<string>(new[] { "sessions", "linked", "memory", "updates", "backup", "settings" });
+                    var next = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
+                    string shown = null;
+                    next.Tick += (_, _) =>
+                    {
+                        if (shown != null) Save(main, Path.Combine(dir, "page-" + shown + "-" + Neu.P.Name + ".png"));
+                        if (pages.Count == 0) { next.Stop(); Exit(); return; }
+                        shown = pages.Dequeue();
+                        dashboard.Show(shown);
+                    };
+                    next.Start();
                     return;
                 }
                 y = Math.Min(end, y + step);

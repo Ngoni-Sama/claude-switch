@@ -37,7 +37,9 @@ public class Ring : Control
         if (pct > 0)
         {
             double frac = Math.Min(100, pct) / 100.0;
-            var pen = new Pen(Neu.B(color), stroke, lineCap: PenLineCap.Round);
+            // Accent rings fade blue to indigo; warning and limit rings brighten along the arc.
+            Color end2 = color == Neu.P.Accent ? Neu.P.Accent2 : Neu.Mix(color, Colors.White, Neu.P.IsDark ? 0.15 : 0.3);
+            var pen = new Pen(Neu.Gradient(color, end2), stroke, lineCap: PenLineCap.Round);
             if (frac >= 0.999) ctx.DrawEllipse(null, pen, c, r, r);
             else
             {
@@ -52,7 +54,7 @@ public class Ring : Control
                     s.EndFigure(false);
                 }
                 ctx.DrawGeometry(null, pen, g);
-                ctx.DrawEllipse(Neu.B(color), null, stop, stroke * 0.95, stroke * 0.95);
+                ctx.DrawEllipse(Neu.B(end2), null, stop, stroke * 0.95, stroke * 0.95);
             }
         }
 

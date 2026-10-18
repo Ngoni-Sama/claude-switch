@@ -163,9 +163,10 @@ public static class LinkUi
         reload();
     }
 
+    // One box: the address (filled in when one is already on the clipboard).
+    // The other computer's own name arrives with its answer.
     static async Task LinkComputer(Window owner, Action reload)
     {
-        // Already copied the other computer's address? Start with it filled in.
         string pasted = "";
         try
         {
@@ -175,21 +176,15 @@ public static class LinkUi
         catch (Exception) { }
         string input = await Dialogs.Text(owner, "Link a computer",
             (pasted.Length > 0 ? "Filled in from what you copied. " : "") +
-            "Paste the other computer's address. It's on its Linked computers card (Copy address), like CS-XXXXX-XXXXX-XXXXX-XXXXX-XXXX.", pasted,
-            t => LinkCrypto.Normalize(t) == null ? "That isn't a complete address (24 letters and numbers after CS-)."
+            "Paste the other computer's address (Copy address on its Linked computers page).", pasted,
+            t => LinkCrypto.Normalize(t) == null ? "That isn't a complete address: CS- and 24 letters and numbers."
                : LinkCrypto.Normalize(t) == Link.Address ? "That's this computer's own address." : null);
         if (input == null) return;
-        string name = await Dialogs.Text(owner, "Name it", "What should this computer call it? For example Office PC or Laptop in London.", "",
-            t => string.IsNullOrWhiteSpace(t) || t.Trim().Length > 40 ? "Use 1 to 40 characters." : null);
-        if (name == null) return;
         try
         {
-            LinkPeer p = await Link.Request(input, name);
-            if (p.Linked) await Dialogs.Info(owner, "Linked", p.Name + " is linked.");
-            else if (await Dialogs.Ask(owner, "Link request sent",
-                         "Accept it on " + p.Name + ". It appears there within a few minutes (or press Check now on it). Make sure the address it shows is this one:\n\n" +
-                         LinkCrypto.Format(Link.Address), "Copy this address", "OK") == 0)
-                await Copy(owner, Link.Address);
+            LinkPeer p = await Link.Request(input, null);
+            Shell.Notify(p.Linked ? "Linked" : "Link request sent",
+                p.Linked ? p.Name + " is linked." : "Accept it on the other computer. It appears there within a few minutes.");
         }
         catch (LinkException ex) { await Dialogs.Info(owner, "Couldn't link", ex.Message); }
         reload();
@@ -231,47 +226,101 @@ public static class LinkUi
         reload();
     }
 
+    // ---- progress -------------------------------------------------------------------
+
+    // A gradient bar with "12 of 85 MB · 1.2 MB/s · about 1 min left" under it.
+    sealed class ProgressView : StackPanel
+    {
+        readonly Border fill = new() { CornerRadius = new CornerRadius(5), HorizontalAlignment = HorizontalAlignment.Left, Width = 0 };
+        readonly Grid track = new() { Height = 10 };
+        readonly TextBlock text = Neu.T("", 13, Neu.P.Muted);
+        readonly TextBlock title = Neu.T("", 14.5, null, FontWeight.SemiBold);
+        double fraction;
+
+        public ProgressView()
+        {
+            Spacing = 8;
+            fill.Background = Neu.AccentBrush;
+            track.Children.Add(new Border { Background = Neu.B(Neu.P.Inner), CornerRadius = new CornerRadius(5) });
+            track.Children.Add(fill);
+            track.SizeChanged += (_, e) => fill.Width = e.NewSize.Width * fraction;
+            Children.Add(title);
+            Children.Add(track);
+            Children.Add(text);
+            Avalonia.Automation.AutomationProperties.SetName(this, "Progress");
+        }
+
+        public void Set(LinkProgress p)
+        {
+            title.Text = p.Text.Split('…')[0] + (p.Total > 0 && p.Done < p.Total ? " " + (int)(p.Fraction * 100) + "%" : "");
+            fraction = p.Total > 0 ? p.Fraction : 0;
+            fill.Width = track.Bounds.Width * fraction;
+            var bits = new List<string>();
+            if (p.Total > 0) bits.Add(Mb(p.Done) + " of " + Mb(p.Total));
+            else bits.Add(p.Text);
+            if (p.BytesPerSecond > 0) bits.Add(Mb((long)p.BytesPerSecond) + "/s");
+            if (p.Left is TimeSpan left) bits.Add(left.TotalSeconds < 60 ? "a few seconds left" : "about " + Math.Ceiling(left.TotalMinutes) + " min left");
+            text.Text = string.Join("  ·  ", bits);
+            Avalonia.Automation.AutomationProperties.SetName(this, title.Text + ". " + text.Text);
+        }
+
+        public void Message(string heading, string detail, Color? color = null)
+        {
+            title.Text = heading;
+            title.Foreground = Neu.B(color ?? Neu.P.Text);
+            text.Text = detail;
+        }
+
+        static string Mb(long b) => (b / 1024.0 / 1024.0).ToString(b < 10 * 1024 * 1024 ? "0.0" : "0") + " MB";
+    }
+
     // ---- sending ---------------------------------------------------------------------
 
+    // Everything selected by default: one click on Send. Progress shows in place.
     public static Task Send(Window owner, Snapshot snap, LinkPeer peer, Action reload)
     {
-        Window w = Dialogs.Frame("Send to " + peer.Name, 620);
+        Window w = Dialogs.Frame("Send to " + peer.Name, 600);
         var tcs = new TaskCompletionSource();
-        w.Closed += (_, _) => tcs.TrySetResult();
         var cts = new CancellationTokenSource();
+        w.Closed += (_, _) => { cts.Cancel(); tcs.TrySetResult(); };
 
         var body = new StackPanel();
-        body.Children.Add(Neu.Para("Send profiles to " + peer.Name + " over the internet. It's encrypted for " + peer.Name +
-                                   " only and waits there for up to a week, so that computer doesn't need to be on right now."));
-        body.Children.Add(Neu.Section("Profiles"));
+        body.Children.Add(Neu.Para("Encrypted for " + peer.Name + " only. It waits there for up to a week, so that computer doesn't need to be on.", 13.5));
+        var options = new StackPanel();
+        options.Children.Add(Neu.Section("Profiles"));
         var checks = new List<(ProfileEntry, CheckBox)>();
         foreach (ProfileEntry p in snap.Profiles)
         {
             AccountInfo a = snap.Accounts[p.Name];
             Control c = ExportWindow.Check(p.Name, (a.SignedIn ? a.Email ?? "signed in" : "not signed in") + "   ·   " + snap.Sessions[p.Name].Count + " sessions", true);
             checks.Add((p, (CheckBox)((Panel)c).Children[0]));
-            body.Children.Add(c);
+            options.Children.Add(c);
         }
-        body.Children.Add(Neu.Section("Include"));
-        CheckBox Add(string t, string d, bool on) { Control c = ExportWindow.Check(t, d, on); body.Children.Add(c); return (CheckBox)((Panel)c).Children[0]; }
+        options.Children.Add(Neu.Section("Include"));
+        CheckBox Add(string t, string d, bool on) { Control c = ExportWindow.Check(t, d, on); options.Children.Add(c); return (CheckBox)((Panel)c).Children[0]; }
         var cSessions = Add("Sessions and transcripts", "Code-tab conversations, to carry on there", true);
         var cMemory = Add("Claude Code memory", "The notes Claude keeps per project", true);
         var cConfig = Add("Claude Code settings, skills, agents and hooks", "Never your sign-in", true);
         var cDesktop = Add("Claude Desktop settings and MCP servers", "Can contain API keys; they're encrypted for that computer only", true);
+        body.Children.Add(options);
 
-        var status = Neu.T("", 13, Neu.P.Accent, FontWeight.SemiBold);
-        status.Margin = new Thickness(0, 12, 0, 0);
+        var progress = new ProgressView { IsVisible = false, Margin = new Thickness(0, 18, 0, 0) };
+        body.Children.Add(progress);
+        var status = Neu.T("", 13, Neu.P.Bad, FontWeight.SemiBold);
+        status.Margin = new Thickness(0, 10, 0, 0);
         body.Children.Add(status);
-        var send = new NeuButton("Send", primary: true);
+        var send = new NeuButton("Send", primary: true) { MinWidth = 110 };
         var cancel = new NeuButton("Cancel");
-        cancel.Click += () => { cts.Cancel(); w.Close(); };
-        var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 12, Margin = new Thickness(0, 16, 0, 0) };
-        row.Children.Add(send);
+        cancel.Click += w.Close;
+        var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 10, Margin = new Thickness(0, 18, 0, 0) };
         row.Children.Add(cancel);
+        row.Children.Add(send);
         body.Children.Add(row);
 
+        bool done = false;
         send.Click += async () =>
         {
+            if (done) { w.Close(); return; }
             var o = new ExportOptions
             {
                 Profiles = checks.Where(x => x.Item2.IsChecked == true).Select(x => x.Item1).ToList(),
@@ -279,19 +328,31 @@ public static class LinkUi
             };
             if (o.Profiles.Count == 0) { status.Text = "Choose at least one profile."; return; }
             if (!(o.Sessions || o.Memory || o.CodeConfig || o.DesktopSettings)) { status.Text = "Choose at least one thing to include."; return; }
-            send.IsEnabled = false;
-            string error = null;
-            long size = 0;
-            try { size = await Link.SendProfiles(peer, o, m => Dispatcher.UIThread.Post(() => status.Text = m), cts.Token); }
-            catch (OperationCanceledException) { return; }
-            catch (LinkException ex) { error = ex.Message; }
-            catch (Exception ex) { error = ex.Message; ErrorLog.Write(ex); }
-            send.IsEnabled = true;
             status.Text = "";
-            if (error != null) { await Dialogs.Info(w, "Couldn't send", error); return; }
-            await Dialogs.Info(w, "Sent to " + peer.Name,
-                (size / 1024.0 / 1024.0).ToString("0.0") + " MB is waiting for " + peer.Name + ". It shows there within a few minutes; it's deleted from the relay once collected, or after a week.");
-            w.Close();
+            options.IsEnabled = false;
+            options.Opacity = 0.5;
+            send.IsEnabled = false;
+            progress.IsVisible = true;
+            try
+            {
+                long size = await Link.SendProfiles(peer, o, pr => Dispatcher.UIThread.Post(() => progress.Set(pr)), cts.Token);
+                progress.Message("Sent to " + peer.Name, (size / 1024.0 / 1024.0).ToString("0.0") + " MB is waiting there. It appears within a few minutes, and is deleted from the relay once it's collected.", Neu.P.Good);
+                done = true;
+                send.Text = "Done";
+                send.IsEnabled = true;
+                cancel.IsVisible = false;
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                if (ex is not LinkException) ErrorLog.Write(ex);
+                progress.IsVisible = false;
+                status.Text = "Couldn't send: " + ex.Message;
+                options.IsEnabled = true;
+                options.Opacity = 1;
+                send.IsEnabled = true;
+                send.Text = "Try again";
+            }
         };
 
         Dialogs.SetContent(w, new ScrollViewer { Content = Dialogs.Body("Send to " + peer.Name, body), MaxHeight = 760 });
@@ -301,47 +362,64 @@ public static class LinkUi
 
     // ---- receiving ---------------------------------------------------------------------
 
-    public static async Task Accept(Window owner, LinkMessage m, Action reload)
+    // One click: accept a link request (the address is shown in the banner).
+    public static async Task AcceptNow(Window owner, LinkMessage m, Action reload)
     {
-        int c = await Dialogs.Ask(owner, "Link with " + m.Name + "?",
-            m.Name + " wants to link with this computer. Its address is\n\n" + LinkCrypto.Format(m.From) +
-            "\n\nOnly accept if that's your computer and the address matches what it shows. Linked computers can send each other profiles.",
-            "Accept", "Decline", "Later");
-        if (c is not (0 or 1)) return;
         try
         {
-            if (c == 0) await Link.Accept(m, m.Name);
-            else await Link.Decline(m);
+            await Link.Accept(m, m.Name);
+            Shell.Notify("Linked with " + m.Name, "You can now send profiles to each other.");
         }
-        catch (LinkException ex) { await Dialogs.Info(owner, "Couldn't answer", ex.Message); }
+        catch (LinkException ex) { await Dialogs.Info(owner, "Couldn't accept", ex.Message); }
         reload();
     }
 
+    // Kept for callers that want to review first.
+    public static Task Accept(Window owner, LinkMessage m, Action reload) => AcceptNow(owner, m, reload);
+
+    // One click: download with a progress bar, then import it straight away
+    // (same choices Import suggests; nothing on this computer is overwritten).
     public static async Task Receive(Window owner, LinkMessage m, Action reload)
     {
-        Window w = Dialogs.Frame("Receiving from " + m.Name, 480);
-        var status = Neu.T("Starting…", 14, Neu.P.Accent, FontWeight.SemiBold);
+        Window w = Dialogs.Frame("From " + m.Name, 520);
         var cts = new CancellationTokenSource();
-        var stop = new NeuButton("Cancel");
-        stop.Click += () => { cts.Cancel(); w.Close(); };
-        var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
-        row.Children.Add(stop);
-        Dialogs.SetContent(w, Dialogs.Body("Receiving from " + m.Name, Neu.Para("Downloading and decrypting " + string.Join(", ", m.Profiles) + "."), status, row));
+        var progress = new ProgressView();
+        progress.Set(new LinkProgress("Receiving…", 0, m.Size));
+        var close = new NeuButton("Cancel");
+        bool finished = false;
+        close.Click += () => { if (!finished) cts.Cancel(); w.Close(); };
+        w.Closed += (_, _) => { if (!finished) cts.Cancel(); };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
+        row.Children.Add(close);
+        Dialogs.SetContent(w, Dialogs.Body("From " + m.Name, Neu.Para(string.Join(", ", m.Profiles) + ", end-to-end encrypted.", 13.5), progress, row));
         w.Show(owner);
 
-        string path = null, error = null;
-        try { path = await Link.Receive(m, t => Dispatcher.UIThread.Post(() => status.Text = t), cts.Token); }
-        catch (OperationCanceledException) { }
-        catch (LinkException ex) { error = ex.Message; }
-        catch (Exception ex) { error = ex.Message; ErrorLog.Write(ex); }
-        w.Close();
-        reload();
-        if (error != null) { await Dialogs.Info(owner, "Couldn't receive", error); return; }
-        if (path == null) return;
-
-        bool imported = await ImportWindow.Open(owner, path, m.Name);
-        if (imported) { try { File.Delete(path); } catch (Exception) { } }
-        else await Dialogs.Info(owner, "Saved for later", "It's saved at\n" + path + "\n\nImport it any time with Import… on the Move to a new computer card.");
+        string path = null;
+        try
+        {
+            path = await Link.Receive(m, pr => Dispatcher.UIThread.Post(() => progress.Set(pr)), cts.Token);
+            progress.Message("Importing…", "Adding sessions, memory and settings. Nothing here is overwritten.");
+            ImportResult r = await Task.Run(() =>
+            {
+                using ArchiveInfo info = Backup.Open(path, null);
+                List<ProfileEntry> profiles = Profiles.LoadOrEmpty();
+                var accounts = profiles.ToDictionary(p => p.Name, Accounts.Read);
+                return Backup.Import(info, info.Profiles.Select(ap => Backup.Suggest(ap, profiles, accounts)).ToList(), null);
+            });
+            try { File.Delete(path); } catch (Exception) { }
+            string detail = r.Files + " files added" + (r.Skipped > 0 ? ", " + r.Skipped + " already here" : "") + "." +
+                            (r.Notes.Count > 0 ? " " + string.Join(" ", r.Notes) : "") +
+                            " Restart a profile's Claude window to see its new sessions.";
+            progress.Message("Received from " + m.Name, detail, Neu.P.Good);
+        }
+        catch (OperationCanceledException) { w.Close(); }
+        catch (Exception ex)
+        {
+            if (ex is not LinkException) ErrorLog.Write(ex);
+            progress.Message("Couldn't receive", ex.Message + (path != null ? " The download is saved at " + path + "; import it with Import… on Backup & move." : ""), Neu.P.Bad);
+        }
+        finished = true;
+        close.Text = "Done";
         reload();
     }
 }

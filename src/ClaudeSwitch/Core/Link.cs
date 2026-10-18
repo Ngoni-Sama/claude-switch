@@ -44,6 +44,43 @@ public class LinkMessage
 
 public class LinkException : Exception { public LinkException(string m, Exception inner = null) : base(m, inner) { } }
 
+// Progress for the bar: Done of Total bytes (Total 0 = not known yet), with speed and time left.
+public record LinkProgress(string Text, long Done, long Total, double BytesPerSecond = 0, TimeSpan? Left = null)
+{
+    public double Fraction => Total > 0 ? Math.Clamp((double)Done / Total, 0, 1) : 0;
+}
+
+// Counts bytes from parallel parts and reports at most a few times a second.
+sealed class LinkMeter
+{
+    readonly string verb;
+    readonly long total;
+    readonly Action<LinkProgress> report;
+    readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+    long done, lastReport;
+
+    public LinkMeter(string verb, long total, Action<LinkProgress> report)
+    {
+        this.verb = verb; this.total = total; this.report = report;
+        report?.Invoke(new LinkProgress(verb + "…", 0, total));
+    }
+
+    public void Add(long bytes)
+    {
+        long now = Interlocked.Add(ref done, bytes);
+        long ms = clock.ElapsedMilliseconds;
+        if (ms - Interlocked.Read(ref lastReport) < 250 && now < total) return;
+        Interlocked.Exchange(ref lastReport, ms);
+        double rate = ms > 0 ? now * 1000.0 / ms : 0;
+        TimeSpan? left = rate > 0 && now < total ? TimeSpan.FromSeconds((total - now) / rate) : null;
+        report?.Invoke(new LinkProgress(verb + "… " + Mb(now) + " of " + Mb(total), now, total, rate, left));
+    }
+
+    public void Done() => report?.Invoke(new LinkProgress(verb + " complete", total, total));
+
+    static string Mb(long bytes) => (bytes / 1024.0 / 1024.0).ToString(bytes < 10 * 1024 * 1024 ? "0.0" : "0") + " MB";
+}
+
 public sealed class LinkIdentity
 {
     public string Address;
@@ -276,31 +313,42 @@ public class RelayClient : IDisposable
         return (Json.Str(o, "id"), Json.Str(o, "uploadToken"));
     }
 
-    public async Task PutPart(string to, string id, string token, int n, byte[] data)
+    // Parts travel as base64 text the relay stores and serves untouched, so it
+    // never spends CPU converting them. Busy or failed attempts are retried.
+    public async Task PutPart(string to, string id, string token, int n, byte[] data, CancellationToken cancel = default)
     {
+        string text = Convert.ToBase64String(data);
         for (int attempt = 0; ; attempt++)
         {
-            var req = new HttpRequestMessage(HttpMethod.Put, baseUrl + "/v1/mail/" + to + "/" + id + "/" + n) { Content = new ByteArrayContent(data) };
+            var req = new HttpRequestMessage(HttpMethod.Put, baseUrl + "/v1/mail/" + to + "/" + id + "/" + n)
+            {
+                Content = new StringContent(text, Encoding.ASCII, "text/plain"),
+            };
             req.Headers.Add("X-Upload-Token", token);
-            try { await Send(req); return; }
-            catch (LinkException) when (attempt < 3) { await Task.Delay(1500 * (attempt + 1)); }
+            req.Headers.Add("X-Part-Encoding", "base64");
+            try { await Send(req, cancel); return; }
+            catch (LinkException) when (attempt < 5 && !cancel.IsCancellationRequested) { await Task.Delay(Backoff(attempt), cancel); }
         }
     }
 
+    static TimeSpan Backoff(int attempt) => TimeSpan.FromMilliseconds(800 * Math.Pow(2, attempt) + Random.Shared.Next(400));
+
     public async Task<JsonArray> List(LinkIdentity me) => Json.Arr(await Send(Auth(HttpMethod.Get, "/v1/mail/" + me.Address, me)), "messages") ?? new JsonArray();
 
-    public async Task<byte[]> GetPart(LinkIdentity me, string id, int n)
+    public async Task<byte[]> GetPart(LinkIdentity me, string id, int n, CancellationToken cancel = default)
     {
         for (int attempt = 0; ; attempt++)
         {
             try
             {
-                using HttpResponseMessage r = await http.SendAsync(Auth(HttpMethod.Get, "/v1/mail/" + me.Address + "/" + id + "/" + n, me));
+                using HttpResponseMessage r = await http.SendAsync(Auth(HttpMethod.Get, "/v1/mail/" + me.Address + "/" + id + "/" + n, me), cancel);
+                if ((int)r.StatusCode >= 500 && attempt < 5) { await Task.Delay(Backoff(attempt), cancel); continue; }
                 if (!r.IsSuccessStatusCode) throw new LinkException("The relay couldn't find part " + (n + 1) + " (" + (int)r.StatusCode + "). The sender may need to send it again.");
-                return await r.Content.ReadAsByteArrayAsync();
+                bool text = r.Headers.TryGetValues("X-Part-Encoding", out var enc) && enc.Contains("base64");
+                return text ? Convert.FromBase64String(await r.Content.ReadAsStringAsync(cancel)) : await r.Content.ReadAsByteArrayAsync(cancel);
             }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && attempt < 3) { await Task.Delay(1500 * (attempt + 1)); }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { throw new LinkException("Couldn't reach the relay. Check your internet connection.", ex); }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && attempt < 5 && !cancel.IsCancellationRequested) { await Task.Delay(Backoff(attempt), cancel); }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancel.IsCancellationRequested) { throw new LinkException("Couldn't reach the relay. Check your internet connection.", ex); }
         }
     }
 
@@ -511,8 +559,12 @@ public static class Link
         catch (Exception ex) { ErrorLog.Write(ex); }   // best effort
     }
 
+    // Parts in flight at once. The relay spends most of each request writing to
+    // its database, so overlapping them roughly triples throughput.
+    const int Parallel = 4;
+
     // Export the chosen profiles and send them, encrypted, to a linked computer.
-    public static async Task<long> SendProfiles(LinkPeer peer, ExportOptions o, Action<string> progress, CancellationToken cancel = default)
+    public static async Task<long> SendProfiles(LinkPeer peer, ExportOptions o, Action<LinkProgress> progress, CancellationToken cancel = default)
     {
         LinkIdentity me = Identity ?? throw new LinkException("Linked computers is off.");
         if (!peer.Linked) throw new LinkException(peer.Name + " hasn't accepted the link yet.");
@@ -520,8 +572,8 @@ public static class Link
         string tmp = Path.Combine(Path.GetTempPath(), "claude-switch-send-" + Guid.NewGuid().ToString("N") + ".claudeprofiles");
         try
         {
-            progress?.Invoke("Packing profiles…");
-            await Task.Run(() => Backup.Export(o, tmp, progress), cancel);
+            progress?.Invoke(new LinkProgress("Packing profiles…", 0, 0));
+            await Task.Run(() => Backup.Export(o, tmp, t => progress?.Invoke(new LinkProgress(t, 0, 0))), cancel);
             long size = new FileInfo(tmp).Length;
             using RelayClient c = Client();
             int chunk = await c.MaxPart() - 128;   // room for IV, padding and MAC
@@ -530,17 +582,24 @@ public static class Link
             meta["profiles"] = new JsonArray(o.Profiles.Select(p => (JsonNode)p.Name).ToArray());
             Posted m = await Post(c, me, "transfer", peer.Address, peer.Ecdh, meta, size, parts);
 
-            byte[] buf = new byte[chunk];
+            var meter = new LinkMeter("Sending", size, progress);
             using var fs = File.OpenRead(tmp);
-            for (int n = 0; n < parts; n++)
+            for (int first = 0; first < parts; first += Parallel)
             {
-                cancel.ThrowIfCancellationRequested();
-                int read = 0, r;
-                while (read < chunk && (r = fs.Read(buf, read, chunk - read)) > 0) read += r;
-                byte[] body = LinkCrypto.Seal(m.Keys, m.Ctx, (uint)n, n == parts - 1, buf.AsSpan(0, read));
-                await c.PutPart(peer.Address, m.Id, m.Token, n, body);
-                progress?.Invoke("Sending… " + Mb(Math.Min(size, (long)(n + 1) * chunk)) + " of " + Mb(size));
+                var batch = new List<Task>();
+                for (int n = first; n < Math.Min(parts, first + Parallel); n++)
+                {
+                    cancel.ThrowIfCancellationRequested();
+                    byte[] buf = new byte[chunk];
+                    int read = 0, r;
+                    while (read < chunk && (r = fs.Read(buf, read, chunk - read)) > 0) read += r;
+                    byte[] body = LinkCrypto.Seal(m.Keys, m.Ctx, (uint)n, n == parts - 1, buf.AsSpan(0, read));
+                    int part = n, plain = read;
+                    batch.Add(Task.Run(async () => { await c.PutPart(peer.Address, m.Id, m.Token, part, body, cancel); meter.Add(plain); }, cancel));
+                }
+                await Task.WhenAll(batch);
             }
+            meter.Done();
             return size;
         }
         finally { try { File.Delete(tmp); } catch (Exception) { } }
@@ -589,7 +648,14 @@ public static class Link
                     switch (kind)
                     {
                         case "accept":
-                            if (known != null && !known.Linked) { known.State = "linked"; Upsert(known); changed = true; }
+                            if (known != null && !known.Linked)
+                            {
+                                known.State = "linked";
+                                // Linked without naming it: use the name it calls itself.
+                                if (known.Name == "Computer " + known.Address[..5] && !string.IsNullOrWhiteSpace(name)) known.Name = name.Trim();
+                                Upsert(known);
+                                changed = true;
+                            }
                             await c.Delete(me, id);
                             break;
                         case "unlink":
@@ -638,7 +704,7 @@ public static class Link
 
     // Download and decrypt a transfer to a backup file this computer can import.
     // The relay copy is deleted once it has arrived intact.
-    public static async Task<string> Receive(LinkMessage m, Action<string> progress, CancellationToken cancel = default)
+    public static async Task<string> Receive(LinkMessage m, Action<LinkProgress> progress, CancellationToken cancel = default)
     {
         LinkIdentity me = Identity ?? throw new LinkException("Linked computers is off.");
         if (!m.Complete) throw new LinkException("That transfer is still uploading. Try again in a minute.");
@@ -649,19 +715,26 @@ public static class Link
         var keys = LinkCrypto.DeriveKeys(me.Ecdh, m.Eph, ctx);
         using RelayClient c = Client();
         long total = 0;
+        var meter = new LinkMeter("Receiving", m.Size, progress);
         try
         {
             using (var fs = new FileStream(path, FileMode.Create))
             {
-                for (int n = 0; n < m.Parts; n++)
+                // A few parts at a time, written in order.
+                for (int first = 0; first < m.Parts; first += Parallel)
                 {
                     cancel.ThrowIfCancellationRequested();
-                    byte[] plain = LinkCrypto.Open(keys, ctx, (uint)n, n == m.Parts - 1, await c.GetPart(me, m.Id, n));
-                    fs.Write(plain);
-                    total += plain.Length;
-                    progress?.Invoke("Receiving… " + Mb(total) + " of " + Mb(m.Size));
+                    var batch = Enumerable.Range(first, Math.Min(Parallel, m.Parts - first))
+                        .Select(n => Task.Run(async () =>
+                        {
+                            byte[] plain = LinkCrypto.Open(keys, ctx, (uint)n, n == m.Parts - 1, await c.GetPart(me, m.Id, n, cancel));
+                            meter.Add(plain.Length);
+                            return plain;
+                        }, cancel)).ToList();
+                    foreach (byte[] plain in await Task.WhenAll(batch)) { fs.Write(plain); total += plain.Length; }
                 }
             }
+            meter.Done();
             if (total != m.Size) throw new LinkException("The transfer arrived incomplete. Ask " + m.Name + " to send it again.");
         }
         catch (Exception) { try { File.Delete(path); } catch (Exception) { } throw; }

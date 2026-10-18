@@ -22,6 +22,9 @@ public class DashboardView : Border
     const int PageSize = 8;            // sessions shown at once, newest first
     Snapshot snap;
     string selected;
+    string page = "overview";
+    readonly Border sidebar;
+    readonly StackPanel nav;
     int sessionPage;
     bool loading;
 
@@ -30,10 +33,16 @@ public class DashboardView : Border
 
     public DashboardView()
     {
-        Background = Neu.B(Neu.P.Bg);
-        content = new StackPanel { Margin = new Thickness(28, 8, 28, 28), Spacing = 16 };
+        Background = Neu.PageBrush;
+        content = new StackPanel { Margin = new Thickness(36, 28, 36, 36), Spacing = 18, MaxWidth = 1240, HorizontalAlignment = HorizontalAlignment.Stretch };
         scroller = new ScrollViewer { Content = content, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
-        Child = scroller;
+        nav = new StackPanel { Spacing = 2 };
+        sidebar = new Border { Width = 232, Child = nav, Padding = new Thickness(14, 18, 14, 14) };
+        var layout = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+        layout.Children.Add(sidebar);
+        Grid.SetColumn(scroller, 1);
+        layout.Children.Add(scroller);
+        Child = layout;
         content.Children.Add(Neu.T("Loading…", 14, Neu.P.Muted));
         timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
         timer.Tick += (_, _) => Reload(false);
@@ -111,50 +120,202 @@ public class DashboardView : Border
 
     void Build()
     {
-        Background = Neu.B(Neu.P.Bg);
+        Background = Neu.PageBrush;
         Vector offset = scroller.Offset;
         content.Children.Clear();
-        if (snap.Profiles.Count == 0) { content.Children.Add(new OnboardingView(() => Reload(true))); return; }
+        bool onboarding = snap.Profiles.Count == 0;
+        sidebar.IsVisible = !onboarding;
+        if (onboarding) { content.Children.Add(new OnboardingView(() => Reload(true))); return; }
+        BuildNav();
 
-        BuildHeader();
-        BuildSummary();
-        if (!snap.ClaudeInstalled) content.Children.Add(Banner(Neu.P.Warn, "Claude Desktop isn't installed", InstallHint(),
-            Btn("Get Claude", true, () => Links.Open(Platform.IsLinux ? Links.ClaudeLinux : Links.ClaudeDownload))));
-        BuildBanners();
-        BuildCards();
-        BuildSessions();
-        BuildFooter();
+        switch (page)
+        {
+            case "sessions":
+                PageHeader("Sessions", "Code-tab conversations of each signed-in account. Continue one in another profile to finish it there; the original stays where it is.");
+                BuildSessions();
+                break;
+            case "linked":
+                PageHeader("Linked computers", "Send profiles to your other computers over the internet, wherever they are. End-to-end encrypted; sign-ins never travel.");
+                BuildLinkBanners();
+                content.Children.Add(LinkUi.Panel(snap, Owner, () => Reload(true)));
+                break;
+            case "memory":
+                PageHeader("Shared memory", "Let accounts share one memory and one set of conversations, so one can carry on where another ran out.");
+                content.Children.Add(UnifyPanel.Build(snap, Owner, () => Reload(true), Later));
+                break;
+            case "updates":
+                PageHeader("Updates", "Keep Claude current in every profile, and clear out old copies that stopped updating.");
+                content.Children.Add(UpdatePanel.Build(snap, Owner, () => Reload(true), Later));
+                break;
+            case "backup":
+                PageHeader("Backup & move", "Export profiles to a file for a new computer, or send them straight to a linked one.");
+                BuildBackupPage();
+                break;
+            case "terminal":
+                PageHeader("Terminal", "Run Claude Code as any profile from a terminal.");
+                content.Children.Add(ExtrasPanels.Terminal_(snap, Owner, () => Reload(true)));
+                break;
+            case "settings":
+                PageHeader("Settings", null);
+                content.Children.Add(ExtrasPanels.Settings_(snap, Owner, () => Reload(true)));
+                if (ExtrasPanels.RelayPanel(snap) is Control relay) content.Children.Add(relay);
+                break;
+            case "support":
+                PageHeader("Support", null);
+                BuildSupportPage();
+                break;
+            default:
+                PageHeader("Overview", "Each profile is its own Claude window and account. When one runs out of usage, hand a session to another and keep going.",
+                    Btn("+ Add profile", true, () => _ = AddProfile()), Btn("Refresh", false, () => Reload(true)));
+                BuildSummary();
+                if (!snap.ClaudeInstalled) content.Children.Add(Banner(Neu.P.Warn, "Claude Desktop isn't installed", InstallHint(),
+                    Btn("Get Claude", true, () => Links.Open(Platform.IsLinux ? Links.ClaudeLinux : Links.ClaudeDownload))));
+                BuildBanners();
+                BuildCards();
+                break;
+        }
         Dispatcher.UIThread.Post(() => scroller.Offset = offset, DispatcherPriority.Loaded);
+    }
+
+    public void Show(string name)
+    {
+        if (page == name) return;
+        page = name;
+        scroller.Offset = default;
+        if (snap != null) Build();
+    }
+
+    // ---- sidebar ------------------------------------------------------------------------
+
+    static readonly (string key, string label, string glyph)[] Pages =
+    {
+        ("overview", "Overview", "M2,2 h5 v5 h-5 z M9,2 h5 v5 h-5 z M2,9 h5 v5 h-5 z M9,9 h5 v5 h-5 z"),
+        ("sessions", "Sessions", "M2,3 h12 v8 h-6 l-3,3 v-3 h-3 z"),
+        ("linked", "Linked computers", "M3,3.5 h10 v7 h-10 z M1,13 h14"),
+        ("memory", "Shared memory", "M8,2 l6,3 l-6,3 l-6,-3 z M2,8 l6,3 l6,-3 M2,11 l6,3 l6,-3"),
+        ("updates", "Updates", "M13,8 a5,5 0 1 1 -1.6,-3.7 M13,2 v3 h-3"),
+        ("backup", "Backup & move", "M2,3 h12 v3 h-12 z M3,6 v8 h10 v-8 M6,9 h4"),
+        ("terminal", "Terminal", "M2,3 h12 v10 h-12 z M5,6.5 l2,1.5 l-2,1.5 M8.5,10 h3"),
+        ("settings", "Settings", "M8,5.5 a2.5,2.5 0 1 0 0.01,0 M8,1 v2 M8,13 v2 M1,8 h2 M13,8 h2 M3,3 l1.4,1.4 M11.6,11.6 l1.4,1.4 M3,13 l1.4,-1.4 M11.6,4.4 l1.4,-1.4"),
+        ("support", "Support", "M8,13.5 l-5.2,-5.2 a3,3 0 0 1 5.2,-4 a3,3 0 0 1 5.2,4 z"),
+    };
+
+    void BuildNav()
+    {
+        sidebar.Background = Neu.SidebarBrush;
+        sidebar.BorderBrush = Neu.B(Neu.P.Border);
+        sidebar.BorderThickness = new Thickness(0, 0, 1, 0);
+        nav.Children.Clear();
+
+        var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(6, 0, 0, 18) };
+        brand.Children.Add(new Image { Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://ClaudeSwitch/Assets/icon.png"))), Width = 30, Height = 30 });
+        var names = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        names.Children.Add(Neu.T("Claude Switch", 15, null, FontWeight.SemiBold));
+        names.Children.Add(Neu.T(snap.Profiles.Count + (snap.Profiles.Count == 1 ? " profile" : " profiles"), 11.5, Neu.P.Muted));
+        brand.Children.Add(names);
+        nav.Children.Add(brand);
+
+        int inbox = (Demo.On ? Demo.LinkInbox : Link.Inbox).Count;
+        foreach (var (key, label, glyph) in Pages)
+        {
+            string badge = key switch
+            {
+                "linked" when inbox > 0 => inbox.ToString(),
+                "updates" when Updater.Mode != UpdateMode.Off && snap.Updates.AnythingBehind => "1",
+                "overview" when snap.Profiles.Any(p => snap.Accounts[p.Name].AtLimit) => "!",
+                _ => null,
+            };
+            nav.Children.Add(NavItem(key, label, glyph, badge));
+        }
+
+        var themes = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(4, 22, 0, 8) };
+        foreach (string theme in new[] { "Light", "Dark" })
+        {
+            string n = theme.ToLowerInvariant();
+            var t = new NeuButton(theme, false, 12) { Selected = Neu.P.Name == n, MinWidth = 72 };
+            AutomationProperties.SetName(t, theme + " theme");
+            t.Click += () => { if (Neu.P.Name != n) Neu.Switch(n); };
+            themes.Children.Add(t);
+        }
+        nav.Children.Add(themes);
+        var ver = Neu.Para("Version " + typeof(DashboardView).Assembly.GetName().Version.ToString(3) + " · by Ngoni Maphosa. Unofficial; not affiliated with Anthropic.", 11);
+        ver.Margin = new Thickness(6, 4, 4, 0);
+        nav.Children.Add(ver);
+    }
+
+    Control NavItem(string key, string label, string glyph, string badge)
+    {
+        bool on = page == key;
+        Color fg = on ? Neu.P.OnAccent : Neu.P.Text;
+        var icon = new Avalonia.Controls.Shapes.Path
+        {
+            Data = Geometry.Parse(glyph), Stroke = Neu.B(on ? Neu.P.OnAccent : Neu.P.Muted), StrokeThickness = 1.4,
+            StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round, Width = 16, Height = 16, Stretch = Stretch.None,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+        row.Children.Add(icon);
+        var text = Neu.T(label, 13.5, fg, on ? FontWeight.SemiBold : FontWeight.Normal);
+        text.Margin = new Thickness(11, 0, 0, 0);
+        text.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(text, 1);
+        row.Children.Add(text);
+        if (badge != null)
+        {
+            var pill = new Border
+            {
+                Background = on ? Neu.B(Color.FromArgb(0x40, 255, 255, 255)) : Neu.AccentBrush, CornerRadius = new CornerRadius(9),
+                Padding = new Thickness(7, 1), MinWidth = 20, VerticalAlignment = VerticalAlignment.Center,
+                Child = Neu.T(badge, 11, Neu.P.OnAccent, FontWeight.SemiBold),
+            };
+            ((TextBlock)pill.Child).HorizontalAlignment = HorizontalAlignment.Center;
+            Grid.SetColumn(pill, 2);
+            row.Children.Add(pill);
+        }
+        var item = new Border
+        {
+            Child = row, Padding = new Thickness(11, 8), CornerRadius = new CornerRadius(10), Focusable = true,
+            Background = on ? Neu.AccentBrush : Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand),
+            BoxShadow = on && !Neu.P.IsDark ? BoxShadows.Parse("0 2 8 0 #330066CC") : default,
+        };
+        AutomationProperties.SetName(item, label + (on ? ", current page" : "") + (badge != null ? ", " + badge + " new" : ""));
+        if (!on)
+        {
+            item.PointerEntered += (_, _) => item.Background = Neu.B(Neu.P.Hover);
+            item.PointerExited += (_, _) => item.Background = Brushes.Transparent;
+        }
+        item.PointerPressed += (_, e) => { e.Handled = true; Show(key); };
+        item.KeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space) { e.Handled = true; Show(key); } };
+        return item;
+    }
+
+    void PageHeader(string title, string subtitle, params Control[] tools)
+    {
+        var head = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
+        if (tools.Length > 0)
+        {
+            var bar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Top };
+            foreach (Control t in tools) bar.Children.Add(t);
+            DockPanel.SetDock(bar, Dock.Right);
+            head.Children.Add(bar);
+        }
+        var titles = new StackPanel();
+        var t1 = Neu.T(title, 30, null, FontWeight.Bold);
+        t1.LetterSpacing = -0.6;
+        titles.Children.Add(t1);
+        if (subtitle != null)
+        {
+            var sub = Neu.Para(subtitle, 14);
+            sub.Margin = new Thickness(0, 4, 24, 0);
+            titles.Children.Add(sub);
+        }
+        head.Children.Add(titles);
+        content.Children.Add(head);
     }
 
     static string InstallHint() => Platform.IsLinux
         ? "Claude Switch opens Claude Desktop with a separate folder per profile. On Ubuntu/Debian install it with: sudo apt install claude-desktop (after adding Anthropic's apt repository)."
         : "Claude Switch opens Claude Desktop with a separate folder per profile. Install Claude from claude.ai/download, then come back.";
-
-    void BuildHeader()
-    {
-        var head = new DockPanel { Margin = new Thickness(0, 0, 0, 2) };
-        var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
-        foreach (string theme in new[] { "Light", "Dark" })
-        {
-            string name = theme.ToLowerInvariant();
-            var t = new NeuButton(theme, false, 12.5) { Selected = Neu.P.Name == name };
-            AutomationProperties.SetName(t, theme + " theme");
-            t.Click += () => { if (Neu.P.Name != name) Neu.Switch(name); };
-            tools.Children.Add(t);
-        }
-        tools.Children.Add(Btn("+ Add profile", true, () => _ = AddProfile()));
-        tools.Children.Add(Btn("Refresh", false, () => Reload(true)));
-        DockPanel.SetDock(tools, Dock.Right);
-        head.Children.Add(tools);
-        var titles = new StackPanel();
-        titles.Children.Add(Neu.Heading("Your Claude profiles", 24));
-        var sub = Neu.Para("Each profile is its own Claude window and account. When one runs out of usage, hand a session to another and keep going.", 13.5);
-        sub.Margin = new Thickness(0, 4, 24, 0);
-        titles.Children.Add(sub);
-        head.Children.Add(titles);
-        content.Children.Add(head);
-    }
 
     // pc_info-style strip of big numbers: profiles, room left, sessions, Claude.
     void BuildSummary()
@@ -219,23 +380,33 @@ public class DashboardView : Border
 
     void BuildBanners()
     {
+        BuildLinkBanners();
+        BuildOtherBanners();
+    }
+
+    void BuildLinkBanners()
+    {
         // Linked computers: transfers waiting here, and requests to link.
         foreach (LinkMessage m in Demo.On ? Demo.LinkInbox : Link.Inbox)
         {
             LinkMessage msg = m;
             if (m.Kind == "link")
                 content.Children.Add(Banner(Neu.P.Accent, m.Name + " wants to link with this computer",
-                    "Its address is " + LinkCrypto.Format(m.From) + ". Accept if that's your computer; then either one can send the other profiles.",
-                    Btn("Review…", true, () => _ = LinkUi.Accept(Owner, msg, () => Reload(true))),
+                    "Its address is " + LinkCrypto.Format(m.From) + ". Accept if that's your computer and the address matches what it shows; then either one can send the other profiles.",
+                    Btn("Accept", true, () => _ = LinkUi.AcceptNow(Owner, msg, () => Reload(true))),
+                    Btn("Decline", false, async () => { try { await Link.Decline(msg); } catch (LinkException) { } Reload(true); }),
                     Btn("Copy its address", false, () => _ = LinkUi.Copy(Owner, msg.From), 12.5)));
             else
                 content.Children.Add(Banner(Neu.P.Accent, m.Name + " sent you " + Describe(m.Profiles) + (m.Profiles.Count == 1 ? "" : " profiles"),
-                    (m.Size / 1024.0 / 1024.0).ToString("0.0") + " MB, sent " + Accounts.Ago(m.Created) + ", end-to-end encrypted. It waits on the relay until " +
-                    m.Expires.ToString("ddd d MMM", CultureInfo.InvariantCulture) + ". Receive it to choose what to import; nothing is overwritten.",
-                    Btn(m.Complete ? "Receive…" : "Still uploading", true, () => { if (msg.Complete) _ = LinkUi.Receive(Owner, msg, () => Reload(true)); }),
+                    (m.Size / 1024.0 / 1024.0).ToString("0.0") + " MB, sent " + Accounts.Ago(m.Created) + ", end-to-end encrypted. Receive imports it straight away; " +
+                    "nothing on this computer is overwritten. It waits until " + m.Expires.ToString("ddd d MMM", CultureInfo.InvariantCulture) + ".",
+                    Btn(m.Complete ? "Receive" : "Still uploading…", true, () => { if (msg.Complete) _ = LinkUi.Receive(Owner, msg, () => Reload(true)); }),
                     Btn("Decline", false, async () => { try { await Link.Decline(msg); } catch (LinkException) { } Reload(true); })));
         }
+    }
 
+    void BuildOtherBanners()
+    {
         // Claude out of date, or a second forgotten copy of it.
         if (Updater.Mode != UpdateMode.Off && snap.Updates.AnythingBehind)
         {
@@ -476,10 +647,6 @@ public class DashboardView : Border
     void BuildSessions()
     {
         var tile = new StackPanel();
-        tile.Children.Add(Neu.Heading("Sessions", 17));
-        var help = Neu.Para("Code-tab conversations of each signed-in account. Continue one in another profile to finish it there; the original stays where it is.", 13);
-        help.Margin = new Thickness(0, 4, 0, 14);
-        tile.Children.Add(help);
 
         if (selected == null || Profiles.Find(snap.Profiles, selected) == null)
         {
@@ -591,32 +758,28 @@ public class DashboardView : Border
         return g;
     }
 
-    void BuildFooter()
+    Control Panel(string title, string text, params Control[] buttons)
     {
-        var grid = new Masonry { MinColumnWidth = 330, MaxColumns = 4 };
-        Control Panel(string title, string text, params Control[] buttons)
-        {
-            var s = new StackPanel();
-            s.Children.Add(Neu.Heading(title, 15));
-            var p = Neu.Para(text, 13);
-            p.Margin = new Thickness(0, 6, 0, 14);
-            s.Children.Add(p);
-            var r = new WrapPanel();
-            foreach (Control b in buttons) { b.Margin = new Thickness(0, 0, 12, 8); r.Children.Add(b); }
-            s.Children.Add(r);
-            return Neu.Tile(s);
-        }
+        var s = new StackPanel();
+        s.Children.Add(Neu.Heading(title, 15));
+        var p = Neu.Para(text, 13);
+        p.Margin = new Thickness(0, 6, 0, 14);
+        s.Children.Add(p);
+        var r = new WrapPanel();
+        foreach (Control b in buttons) { b.Margin = new Thickness(0, 0, 12, 8); r.Children.Add(b); }
+        s.Children.Add(r);
+        return Neu.Tile(s);
+    }
 
-        grid.Children.Add(UpdatePanel.Build(snap, Owner, () => Reload(true), Later));
-
-        grid.Children.Add(UnifyPanel.Build(snap, Owner, () => Reload(true), Later));
-
+    void BuildBackupPage()
+    {
+        var grid = new Masonry { MinColumnWidth = 380, MaxColumns = 2 };
         grid.Children.Add(Panel("Move to a new computer",
             "Export profiles (sessions, memory, settings) to one file and import them on another computer, e.g. after a crash. Sign-ins stay on this computer.",
             Btn("Export…", true, () => _ = ExportWindow.Show(Owner, snap)), Btn("Import…", false, async () => { if (await ImportWindow.Run(Owner)) Reload(true); })));
-
-        grid.Children.Add(LinkUi.Panel(snap, Owner, () => Reload(true)));
-
+        grid.Children.Add(Panel("Send to a linked computer",
+            "Already linked your other computer? Send profiles to it over the internet instead, no file to carry.",
+            Btn("Open Linked computers", false, () => Show("linked"))));
         if (LinkRouter.Supported)
         {
             string defName = snap.DefaultProfile?.Name ?? "default";
@@ -634,20 +797,19 @@ public class DashboardView : Border
                     Reload(true);
                 })));
         }
+        content.Children.Add(grid);
+    }
 
-        grid.Children.Add(ExtrasPanels.Terminal_(snap, Owner, () => Reload(true)));
-        if (ExtrasPanels.RelayPanel(snap) is Control relay) grid.Children.Add(relay);
-        grid.Children.Add(ExtrasPanels.Settings_(snap, Owner, () => Reload(true)));
-
+    void BuildSupportPage()
+    {
+        var grid = new Masonry { MinColumnWidth = 380, MaxColumns = 2 };
         grid.Children.Add(Panel("Support this project",
             "I'd like to dedicate more of my time building new tools and working on open source projects. Your donation will give me time to focus on developing new tools for the open-source community.",
             Btn("Buy me a coffee", true, () => Links.Open(Links.Support)), Btn("Report an issue", false, () => Links.Open(Links.Issues))));
+        grid.Children.Add(Panel("About",
+            "Claude Switch " + typeof(DashboardView).Assembly.GetName().Version.ToString(3) + " by Ngoni Maphosa. Free and open source (MIT). Unofficial; not affiliated with Anthropic.",
+            Btn("Website", false, () => Links.Open(Links.Site)), Btn("Source code", false, () => Links.Open(Links.Repo))));
         content.Children.Add(grid);
-
-        var ver = Neu.T("Claude Switch " + typeof(DashboardView).Assembly.GetName().Version.ToString(3) +
-                        "  ·  by Ngoni Maphosa  ·  unofficial, not affiliated with Anthropic", 11.5, Neu.P.Muted);
-        ver.Margin = new Thickness(0, 0, 0, 0);
-        content.Children.Add(ver);
     }
 
     // ---- actions -------------------------------------------------------------------------
@@ -741,7 +903,7 @@ public class DashboardView : Border
     // Scrolls to the Claude version card, where the fix buttons live.
     Task ShowUpdates()
     {
-        scroller.ScrollToEnd();
+        Show("updates");
         return Task.CompletedTask;
     }
 
