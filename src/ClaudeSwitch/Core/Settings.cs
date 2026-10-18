@@ -30,6 +30,20 @@ public static class Settings
         set => Update(d => d["theme"] = value);
     }
 
+    // Linked computers: a self-hosted relay instead of the default, and the name
+    // other computers see for this one.
+    public static string LinkRelay
+    {
+        get => Json.Str(Load(), "linkRelay");
+        set => Update(d => d["linkRelay"] = value);
+    }
+
+    public static string LinkName
+    {
+        get => Json.Str(Load(), "linkName");
+        set => Update(d => d["linkName"] = value);
+    }
+
     public static bool HandoffNoticeShown
     {
         get => Json.Bool(Load(), "handoffNoticeShown");

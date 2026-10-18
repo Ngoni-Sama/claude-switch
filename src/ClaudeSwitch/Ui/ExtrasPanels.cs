@@ -178,7 +178,7 @@ public static class ExtrasPanels
         {
             (SelfUpdateMode.Notify, "Tell me", "Check daily and offer the update."),
             (SelfUpdateMode.Automatic, "Automatic", "Check daily and install signed updates by itself. Your Claude windows stay open."),
-            (SelfUpdateMode.Off, "Off", "Never check. Claude Switch then makes no network requests at all."),
+            (SelfUpdateMode.Off, "Off", "Never check. Claude Switch then makes no network requests, unless Linked computers is on."),
         })
         {
             SelfUpdateMode mode = m;

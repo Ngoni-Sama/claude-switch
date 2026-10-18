@@ -22,7 +22,14 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4   # runs the relay for the Linked computers tests
+        with:
+          node-version: 22
       - name: Build
         run: dotnet build src/ClaudeSwitch/ClaudeSwitch.csproj -c Release
       - name: Tests
         run: dotnet test tests/ClaudeSwitch.Tests/ClaudeSwitch.Tests.csproj -c Release
+        env:
+          CS_REQUIRE_RELAY: '1'
+      - name: Relay syntax
+        run: node --check relay/src/worker.js && node --check relay/dev-server.mjs

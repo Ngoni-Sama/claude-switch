@@ -219,6 +219,22 @@ public class DashboardView : Border
 
     void BuildBanners()
     {
+        // Linked computers: transfers waiting here, and requests to link.
+        foreach (LinkMessage m in Demo.On ? Demo.LinkInbox : Link.Inbox)
+        {
+            LinkMessage msg = m;
+            if (m.Kind == "link")
+                content.Children.Add(Banner(Neu.P.Accent, m.Name + " wants to link with this computer",
+                    "Its address is " + LinkCrypto.Format(m.From) + ". Accept if that's your computer; then either one can send the other profiles.",
+                    Btn("Review…", true, () => _ = LinkUi.Accept(Owner, msg, () => Reload(true)))));
+            else
+                content.Children.Add(Banner(Neu.P.Accent, m.Name + " sent you " + Describe(m.Profiles) + (m.Profiles.Count == 1 ? "" : " profiles"),
+                    (m.Size / 1024.0 / 1024.0).ToString("0.0") + " MB, sent " + Accounts.Ago(m.Created) + ", end-to-end encrypted. It waits on the relay until " +
+                    m.Expires.ToString("ddd d MMM", CultureInfo.InvariantCulture) + ". Receive it to choose what to import; nothing is overwritten.",
+                    Btn(m.Complete ? "Receive…" : "Still uploading", true, () => { if (msg.Complete) _ = LinkUi.Receive(Owner, msg, () => Reload(true)); }),
+                    Btn("Decline", false, async () => { try { await Link.Decline(msg); } catch (LinkException) { } Reload(true); })));
+        }
+
         // Claude out of date, or a second forgotten copy of it.
         if (Updater.Mode != UpdateMode.Off && snap.Updates.AnythingBehind)
         {
@@ -597,6 +613,8 @@ public class DashboardView : Border
         grid.Children.Add(Panel("Move to a new computer",
             "Export profiles (sessions, memory, settings) to one file and import them on another computer, e.g. after a crash. Sign-ins stay on this computer.",
             Btn("Export…", true, () => _ = ExportWindow.Show(Owner, snap)), Btn("Import…", false, async () => { if (await ImportWindow.Run(Owner)) Reload(true); })));
+
+        grid.Children.Add(LinkUi.Panel(snap, Owner, () => Reload(true)));
 
         if (LinkRouter.Supported)
         {

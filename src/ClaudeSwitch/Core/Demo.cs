@@ -8,6 +8,19 @@ public static class Demo
 {
     public static bool On { get; set; }
 
+    // Linked computers card: a made-up address and two linked computers.
+    public const string LinkAddress = "7KQ2M9XD4TPAW8RZH3NC5VJE";
+    public static List<LinkPeer> LinkPeers => new()
+    {
+        new LinkPeer { Name = "Laptop (London)", Address = "M4TQ8ZK2VD7RW9NXP3HC6JAE", State = "linked" },
+        new LinkPeer { Name = "Home desktop", Address = "Q9RD2KX7MT4VHW8PZ3NC6JEA", State = "waiting" },
+    };
+    public static List<LinkMessage> LinkInbox => new()
+    {
+        new LinkMessage { Id = "demo", Kind = "transfer", Name = "Laptop (London)", From = "M4TQ8ZK2VD7RW9NXP3HC6JAE", Size = 48 * 1024 * 1024,
+                          Complete = true, Profiles = { "Work", "Personal" }, Created = DateTime.Now.AddMinutes(-12), Expires = DateTime.Now.AddDays(7) },
+    };
+
     static Bucket B(int pct, TimeSpan resetIn, bool resetSince = false) => new()
     {
         Pct = pct, ResetSince = resetSince, ResetAt = DateTime.Now + resetIn, Exact = true, AsOf = DateTime.Now.AddMinutes(-3),

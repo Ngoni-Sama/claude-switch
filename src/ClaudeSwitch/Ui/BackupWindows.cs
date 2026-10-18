@@ -143,7 +143,12 @@ public static class ImportWindow
         });
         string path = files.Count > 0 ? files[0].TryGetLocalPath() : null;
         if (path == null) return false;
+        return await Open(owner, path);
+    }
 
+    // Unlock a backup file (asking for its password if needed) and show what to import.
+    public static async Task<bool> Open(Window owner, string path, string from = null)
+    {
         ArchiveInfo info = null;
         try
         {
@@ -170,7 +175,7 @@ public static class ImportWindow
         w.Closed += (_, _) => { info.Dispose(); tcs.TrySetResult(imported); };
 
         var body = new StackPanel();
-        body.Children.Add(Neu.Para("Backup from " + (info.Machine ?? "another computer") + ", " + (info.Created ?? "unknown date") + "."));
+        body.Children.Add(Neu.Para((from != null ? "Sent by " + from : "Backup from " + (info.Machine ?? "another computer")) + ", " + (info.Created ?? "unknown date") + "."));
         body.Children.Add(Neu.Section("Profiles in this backup"));
         var rows = new List<(ImportChoice, CheckBox)>();
         foreach (ArchiveProfile ap in info.Profiles)

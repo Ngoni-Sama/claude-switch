@@ -1,6 +1,6 @@
 // Claude Switch keeping itself up to date.
 //
-// Its only network request: once a day it asks GitHub for this project's
+// Its one network request (besides Linked computers, if turned on): once a day it asks GitHub for this project's
 // latest release. Before installing anything it checks two things:
 //
 //   1. SHA256SUMS.txt.sig is a valid signature of SHA256SUMS.txt by the key

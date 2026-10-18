@@ -1,0 +1,16 @@
+# Claude Switch relay (Linked computers). See README.md in this folder.
+name = "claude-switch-relay"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+# Pin the account so deploys never land on the wrong one:
+# account_id = "<your Cloudflare account id>"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "claude-switch-relay"
+database_id = "00000000-0000-0000-0000-000000000000"   # replace after `wrangler d1 create`
+
+[triggers]
+crons = ["17 3 * * *"]   # daily clean-up of expired transfers

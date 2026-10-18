@@ -63,6 +63,21 @@ public static class Shell
         var limits = new DispatcherTimer { Interval = TimeSpan.FromMinutes(5) };
         limits.Tick += (_, _) => CheckLimits();
         limits.Start();
+
+        // Linked computers: check the relay for transfers every few minutes,
+        // and say when something new arrives.
+        var seenLink = new HashSet<string>(Link.Inbox.Select(m => m.Id));
+        Link.Changed += () => Dispatcher.UIThread.Post(() =>
+        {
+            foreach (LinkMessage m in Link.Inbox.Where(m => seenLink.Add(m.Id)))
+                Notify(m.Kind == "link" ? m.Name + " wants to link" : m.Name + " sent you profiles",
+                       m.Kind == "link" ? "Open Claude Switch to accept or decline." : string.Join(", ", m.Profiles) + ". Open Claude Switch to receive them.");
+            dashboard?.Reload(true);
+        });
+        var linkTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(3) };
+        linkTimer.Tick += async (_, _) => { if (Link.On) await Link.Refresh(); };
+        linkTimer.Start();
+        Dispatcher.UIThread.Post(async () => { if (Link.On) await Link.Refresh(); }, DispatcherPriority.Background);
         Dispatcher.UIThread.Post(CheckLimits, DispatcherPriority.ApplicationIdle);
 
         if (!args.Contains("--tray") || Profiles.LoadOrEmpty().Count == 0) ShowMain();

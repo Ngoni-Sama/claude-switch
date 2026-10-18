@@ -1,0 +1,10 @@
+{
+  "name": "claude-switch-relay",
+  "private": true,
+  "type": "module",
+  "description": "Mailbox relay for Claude Switch's Linked computers. Stores only end-to-end encrypted data.",
+  "scripts": {
+    "dev": "node dev-server.mjs 8787",
+    "deploy": "wrangler deploy"
+  }
+}

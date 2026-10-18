@@ -43,6 +43,7 @@ at once, and adds what you need to juggle them:
 - **Picks up where you left off.** When you start your computer, Claude Switch offers to reopen the profiles you had open last time, or start clean. It can remember your answer.
 - **Fixes the sign-in mix-up.** A sign-in link can open in the wrong window and switch its account. Claude Switch spots it and offers **Swap names**. It also recovers sessions that seem to have vanished because they were filed under the other account.
 - **Move to a new computer.** Export profiles (sessions, memory, settings) to one password-protected file and import them anywhere. Sign-ins are never exported.
+- **Linked computers, anywhere in the world.** Turn it on and each computer gets an address like `CS-7KQ2M-9XD4T-PAW8R-ZH3NC-5VJE`. Link two computers once by address (another office, another country), then send profiles to each other any time. Transfers are end-to-end encrypted to the receiving computer, wait on a relay for up to a week so the other computer needn't be on, and are deleted once collected. Sign-ins never travel. You can [run your own relay](relay/README.md).
 - **Claude Code in a terminal, per profile.** *More > Open Claude Code in a terminal* opens one already signed in as that profile. Turn on terminal commands to type `claude-work`, `claude-personal`, ... anywhere, and add folder rules so plain `claude` picks the right profile inside a project.
 - **Copy MCP servers between profiles**, for both Claude Desktop and Claude Code. Set them up once; the target's config is backed up first.
 - **A colour per profile** on its card and its launcher icon. Rename, recolour or duplicate a profile from its *More* menu; mark profiles to open whenever Claude Switch starts.
@@ -129,8 +130,10 @@ opens Claude with `--user-data-dir=<folder>`, one folder per profile, next to Cl
 | Other profiles | `%APPDATA%\Claude-<Name>` | `…/Application Support/Claude-<Name>` | `~/.config/Claude-<Name>` |
 
 Usage and reset times come from Claude's own local files: its usage log, the limit notices in Claude Code
-transcripts, and usage reports you copy. Claude Switch never reads or sends your sign-in. Its only network
-request is a daily check for its own updates on GitHub, which you can turn off in Settings.
+transcripts, and usage reports you copy. Claude Switch never reads or sends your sign-in. On its own it makes one network request: a daily check
+for its own updates on GitHub, which you can turn off in Settings. If you turn on Linked computers, it also
+talks to the relay (every few minutes, and when you send or receive); everything it uploads there is
+encrypted on your computer first.
 
 ### Works alongside
 
