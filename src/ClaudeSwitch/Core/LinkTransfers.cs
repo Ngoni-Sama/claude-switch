@@ -162,7 +162,7 @@ public static partial class Link
         try
         {
             using RelayClient c = Client();
-            HashSet<int> have = await c.SenderStatus(rec.To, rec.Id, rec.Token);
+            HashSet<int> have = await c.SenderStatus(rec.To, rec.Id, rec.Token, cancel);
             if (have == null)
             {
                 rec.State = "expired"; rec.Error = "The relay no longer has this transfer; send it again.";

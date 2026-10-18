@@ -360,13 +360,21 @@ public class RelayClient : IDisposable
 
     // Sender side, with the transfer's upload token: which parts arrived (null
     // once the transfer is gone: collected, declined or expired), and cancel.
-    public async Task<HashSet<int>> SenderStatus(string to, string id, string token)
+    public async Task<HashSet<int>> SenderStatus(string to, string id, string token, CancellationToken cancel = default)
     {
-        var req = new HttpRequestMessage(HttpMethod.Get, baseUrl + "/v1/mail/" + to + "/" + id);
-        req.Headers.Add("X-Upload-Token", token);
+        // Retried: this is the first request after a dropped upload, often on a dead connection.
         HttpResponseMessage r;
-        try { r = await http.SendAsync(req); }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { throw new LinkException("Couldn't reach the relay. Check your internet connection.", ex); }
+        for (int attempt = 0; ; attempt++)
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get, baseUrl + "/v1/mail/" + to + "/" + id);
+            req.Headers.Add("X-Upload-Token", token);
+            try { r = await http.SendAsync(req, cancel); break; }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancel.IsCancellationRequested)
+            {
+                if (attempt >= 4) throw new LinkException("Couldn't reach the relay. Check your internet connection.", ex);
+                await Task.Delay(Backoff(attempt), cancel);
+            }
+        }
         using (r)
         {
             if (r.StatusCode == HttpStatusCode.NotFound) return null;
