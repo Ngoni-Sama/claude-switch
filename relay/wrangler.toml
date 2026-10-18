@@ -4,13 +4,14 @@ main = "src/worker.js"
 compatibility_date = "2025-09-01"
 workers_dev = true
 
-# Pin the account so deploys never land on the wrong one:
-# account_id = "<your Cloudflare account id>"
+# The public relay's account (an identifier, not a secret). To host your own,
+# change this and database_id; see README.md.
+account_id = "1e90e6b99306ccd54c9a9eecf6793b02"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "claude-switch-relay"
-database_id = "00000000-0000-0000-0000-000000000000"   # replace after `wrangler d1 create`
+database_id = "859d77fc-4219-4d67-b2b2-8772089c7f86"
 
 [triggers]
 crons = ["17 3 * * *"]   # daily clean-up of expired transfers

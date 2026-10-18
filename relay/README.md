@@ -22,7 +22,7 @@ and when.
 ```bash
 cd relay
 npx wrangler login
-npx wrangler d1 create claude-switch-relay        # copy the database_id into wrangler.toml
+npx wrangler d1 create claude-switch-relay        # put its database_id, and your account_id, in wrangler.toml
 npx wrangler d1 execute claude-switch-relay --remote --file schema.sql
 npx wrangler deploy
 ```
