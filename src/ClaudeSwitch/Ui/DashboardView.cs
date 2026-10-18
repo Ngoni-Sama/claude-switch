@@ -410,7 +410,7 @@ public class DashboardView : Border
         {
             // Coloured icon square beside each number.
             var (tint, glyph) = StatIcons[n++ % StatIcons.Length];
-            double box = Neu.Dense ? 40 : 48;
+            double box = Neu.Dense ? 36 : 42;
             var icon = new Border
             {
                 Width = box, Height = box, CornerRadius = new CornerRadius(12), VerticalAlignment = VerticalAlignment.Top,
@@ -421,10 +421,10 @@ public class DashboardView : Border
                     Data = Geometry.Parse(glyph), Stroke = Brushes.White, StrokeThickness = 1.6, Width = 16, Height = 16,
                     StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round, Stretch = Stretch.None,
                     HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
-                    RenderTransform = new ScaleTransform(Neu.Dense ? 1.15 : 1.35, Neu.Dense ? 1.15 : 1.35),
+                    RenderTransform = new ScaleTransform(Neu.Dense ? 1.05 : 1.2, Neu.Dense ? 1.05 : 1.2),
                 },
             };
-            var s = new StackPanel { Spacing = 3, Margin = new Thickness(14, 0, 0, 0) };
+            var s = new StackPanel { Spacing = 1, Margin = new Thickness(12, 0, 0, 0) };
             s.Children.Add(Neu.T(label, 12.5, Neu.P.Muted, FontWeight.SemiBold));
             s.Children.Add(stat);
             if (note != null) s.Children.Add(Neu.T(note, 12, noteColor ?? Neu.P.Muted, wrap: true));
@@ -432,7 +432,7 @@ public class DashboardView : Border
             g.Children.Add(icon);
             Grid.SetColumn(s, 1);
             g.Children.Add(s);
-            return Neu.Tile(g, Neu.Dense ? new Thickness(14, 12, 14, 12) : new Thickness(18, 16, 18, 16));
+            return Neu.Tile(g, Neu.Dense ? new Thickness(12, 10, 12, 10) : new Thickness(14, 12, 14, 12));
         }
 
         int open = snap.Profiles.Count(p => snap.Pid(p) != 0);
@@ -650,7 +650,7 @@ public class DashboardView : Border
 
     void BuildCards()
     {
-        var grid = new Masonry { Rows = true, MinColumnWidth = 340, MaxColumns = 4 };
+        var grid = new Masonry { Rows = true, MinColumnWidth = Neu.Dense ? 250 : 270, MaxColumns = 4 };
         foreach (ProfileEntry p in snap.Profiles) grid.Children.Add(Card(p));
         content.Children.Add(grid);
     }
@@ -663,7 +663,7 @@ public class DashboardView : Border
 
         // The profile's colour, as a tab across the top of its tile.
         string hex = Profiles.ColorOf(snap.Profiles, p);
-        var tab = new Border { Height = 4, CornerRadius = new CornerRadius(2), Background = Neu.B(Color.Parse(hex)), Margin = new Thickness(0, 0, 0, 14) };
+        var tab = new Border { Height = 4, CornerRadius = new CornerRadius(2), Background = Neu.B(Color.Parse(hex)), Margin = new Thickness(0, 0, 0, 10) };
         ToolTip.SetTip(tab, p.Name + "'s colour (change it under More)");
         s.Children.Add(tab);
 
@@ -672,12 +672,12 @@ public class DashboardView : Border
         Color stateColor = !a.SignedIn ? Neu.P.Warn : pid != 0 ? Neu.P.Good : Neu.P.Muted;
         var status = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7, VerticalAlignment = VerticalAlignment.Center };
         status.Children.Add(Neu.Dot(stateColor, state));
-        status.Children.Add(Neu.T(state, 13, stateColor, FontWeight.SemiBold));
+        status.Children.Add(Neu.T(state, 12, stateColor, FontWeight.SemiBold));
         DockPanel.SetDock(status, Dock.Right);
         top.Children.Add(status);
         // The name, with a pencil to rename it (double-clicking the name works too).
         var nameRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        var heading = Neu.Heading(p.Name, Neu.Dense ? 17 : 19);
+        var heading = Neu.Heading(p.Name, Neu.Dense ? 15.5 : 16.5);
         heading.TextWrapping = TextWrapping.NoWrap;
         heading.TextTrimming = TextTrimming.CharacterEllipsis;
         heading.DoubleTapped += (_, _) => _ = ProfileActions.Rename(Owner, snap, p, () => Reload(true));
@@ -703,11 +703,15 @@ public class DashboardView : Border
         top.Children.Add(nameRow);
         s.Children.Add(top);
 
-        var who = Neu.Field("Account", a.SignedIn ? a.Email ?? "Signed in" : "Open it and sign in", a.SignedIn ? null : Neu.P.Muted);
-        who.Margin = new Thickness(0, 10, 0, 0);
+        var who = Neu.T(a.SignedIn ? a.Email ?? "Signed in" : "No account yet: sign in", 13, a.SignedIn ? null : Neu.P.Warn);
+        who.TextTrimming = TextTrimming.CharacterEllipsis;
+        who.Margin = new Thickness(0, 6, 0, 0);
+        ToolTip.SetTip(who, "Account");
         s.Children.Add(who);
-        var org = Neu.Field(a.OrgName != null ? "Organisation" : "Folder", a.OrgName ?? Platform.Shorten(p.Data), null, 13.5, p.Data);
-        org.Margin = new Thickness(0, 8, 0, 12);
+        var org = Neu.T(a.OrgName ?? Platform.Shorten(p.Data), 12, Neu.P.Muted);
+        org.TextTrimming = TextTrimming.CharacterEllipsis;
+        org.Margin = new Thickness(0, 2, 0, 10);
+        ToolTip.SetTip(org, (a.OrgName != null ? "Organisation " + a.OrgName + "\n" : "") + "Folder " + p.Data);
         s.Children.Add(org);
 
         if (snap.Unify.Members.Contains(p.Name, StringComparer.OrdinalIgnoreCase))
@@ -716,7 +720,9 @@ public class DashboardView : Border
             var tag = Neu.T((linked ? "Shares memory with " : "Sharing needs repair: ") +
                             (linked ? Describe(snap.Unify.Members.Where(m => !string.Equals(m, p.Name, StringComparison.OrdinalIgnoreCase))) : ""),
                             12, linked ? Neu.P.Accent : Neu.P.Warn, FontWeight.SemiBold);
-            tag.Margin = new Thickness(0, -4, 0, 12);
+            tag.Margin = new Thickness(0, -4, 0, 10);
+            tag.FontSize = 11.5;
+            tag.TextTrimming = TextTrimming.CharacterEllipsis;
             ToolTip.SetTip(tag, "Memory, project notes and conversations are shared with " +
                                 Describe(snap.Unify.Members.Where(m => !string.Equals(m, p.Name, StringComparison.OrdinalIgnoreCase))) + ".");
             s.Children.Add(tag);
@@ -724,8 +730,7 @@ public class DashboardView : Border
 
         // Usage: two rings side by side in an inner panel, extras as thin bars.
         var usage = new StackPanel();
-        usage.Children.Add(Neu.T("USAGE", 12, Neu.P.Muted, FontWeight.SemiBold));
-        var rings = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), Margin = new Thickness(0, 10, 0, 0) };
+        var rings = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*") };
         Control session = RingCell("Session", a.Session);
         Control weekly = RingCell("Weekly", a.Weekly);
         Grid.SetColumn(weekly, 1);
@@ -733,33 +738,28 @@ public class DashboardView : Border
         rings.Children.Add(weekly);
         usage.Children.Add(rings);
         foreach (var extra in a.Extra) usage.Children.Add(BucketRow(extra.Key, extra.Value));
-        var legend = Neu.Para("0% = all available · 100% = used up", 11.5);
-        legend.Margin = new Thickness(0, 10, 0, 0);
-        legend.TextAlignment = TextAlignment.Center;
-        usage.Children.Add(legend);
-        s.Children.Add(Neu.Inset(usage, 6, new Thickness(16, 12, 16, 12)));
+        Border usageBox = Neu.Inset(usage, 6, new Thickness(10, 10, 10, 10));
+        ToolTip.SetTip(usageBox, "0% = all available · 100% = used up");
+        s.Children.Add(usageBox);
 
         string clock = a.UsageAt == DateTime.MinValue ? "" : " (" + a.UsageAt.ToString("h:mm tt", CultureInfo.InvariantCulture) + ")";
-        var source = Neu.Para(a.FromReport ? "From Claude's usage report, " + Accounts.Ago(a.UsageAt) + clock + "."
-            : (a.UsageAt == DateTime.MinValue ? "No usage numbers yet." : "From Claude's usage log, " + Accounts.Ago(a.UsageAt) + clock + ".") +
-              " For live numbers, copy the usage report in this profile's Claude window.", 11.5);
-        source.Margin = new Thickness(0, 10, 0, 14);
+        var source = Neu.T(a.FromReport ? "Usage report, " + Accounts.Ago(a.UsageAt) + clock
+            : a.UsageAt == DateTime.MinValue ? "No usage numbers yet" : "Usage log, " + Accounts.Ago(a.UsageAt) + clock, 11, Neu.P.Muted);
+        source.TextTrimming = TextTrimming.CharacterEllipsis;
+        source.Margin = new Thickness(2, 8, 0, 10);
+        ToolTip.SetTip(source, "For live numbers, copy the usage report in this profile's Claude window, then press Paste report.");
         s.Children.Add(source);
 
         var row = new WrapPanel();
-        void Add(Control c) { c.Margin = new Thickness(0, 0, 8, 8); row.Children.Add(c); }
-        if (!a.SignedIn) Add(Btn("Sign in", true, () => _ = SignInWindow.Show(Owner, p, isNew: false, () => Reload(true))));
-        else Add(Btn(pid != 0 ? "Switch to" : "Open", true, () => { Launcher.Activate(p, snap.Pid(p)); Later(() => { }, 5000); }));
-        var paste = Btn("Paste report", false, () => _ = PasteReport(p));
+        void Add(Control c) { c.Margin = new Thickness(0, 0, 6, 6); row.Children.Add(c); }
+        if (!a.SignedIn) Add(Btn("Sign in", true, () => _ = SignInWindow.Show(Owner, p, isNew: false, () => Reload(true)), 12.5));
+        else Add(Btn(pid != 0 ? "Switch to" : "Open", true, () => { Launcher.Activate(p, snap.Pid(p)); Later(() => { }, 5000); }, 12.5));
+        var paste = Btn("Paste report", false, () => _ = PasteReport(p), 12.5);
         ToolTip.SetTip(paste, "Copy the usage report in this profile's Claude window, then click here.");
         Add(paste);
-        if (pid != 0) Add(Btn("Restart", false, async () =>
-        {
-            if (await Dialogs.Ask(Owner, "Restart " + p.Name + "?", "Its window closes and reopens. Anything running in it stops.", "Restart", "Cancel") == 0)
-                Later(() => Launcher.Restart(p), 6000);
-        }));
         NeuButton more = null;
-        more = Btn("More…", false, () => ShowMore(p, more), 12.5);
+        more = Btn("···", false, () => ShowMore(p, more), 13);
+        ToolTip.SetTip(more, "More: restart, rename, colour, terminal, MCP servers…");
         Avalonia.Automation.AutomationProperties.SetName(more, "More actions for " + p.Name);
         Add(more);
 
@@ -768,7 +768,7 @@ public class DashboardView : Border
         DockPanel.SetDock(row, Dock.Bottom);
         dock.Children.Add(row);
         dock.Children.Add(s);
-        return Neu.Tile(dock, new Thickness(20, 16, 20, 10));
+        return Neu.Tile(dock, Neu.Dense ? new Thickness(14, 12, 14, 8) : new Thickness(16, 14, 16, 8));
     }
 
     // One ring with its label and reset line under it.
@@ -776,14 +776,14 @@ public class DashboardView : Border
     {
         int shown = b?.Shown ?? -1;
         var s = new StackPanel { HorizontalAlignment = HorizontalAlignment.Stretch, Spacing = 2 };
-        var ring = new Ring(shown, Neu.Dense ? 80 : 100, 5, null, label) { HorizontalAlignment = HorizontalAlignment.Center };
+        var ring = new Ring(shown, Neu.Dense ? 66 : 74, 4.5, null, label) { HorizontalAlignment = HorizontalAlignment.Center };
         s.Children.Add(ring);
         string reset = b?.ResetText ?? "";
         if (reset.Length > 0)
         {
-            var r = Neu.Para(reset, 11.5, b.ResetSince ? Neu.P.Good : Neu.P.Muted);
+            var r = Neu.Para(reset, 10.5, b.ResetSince ? Neu.P.Good : Neu.P.Muted);
             r.TextAlignment = TextAlignment.Center;
-            r.Margin = new Thickness(4, 6, 4, 0);
+            r.Margin = new Thickness(2, 4, 2, 0);
             s.Children.Add(r);
         }
         AutomationProperties.SetName(s, label + ", " + (shown < 0 ? "no reading" : shown + " percent used") + ". " + reset);
@@ -793,7 +793,7 @@ public class DashboardView : Border
     // An extra bucket from a usage report (e.g. Weekly · Opus): label + %, thin bar, reset line.
     static Control BucketRow(string label, Bucket b)
     {
-        var s = new StackPanel { Margin = new Thickness(0, 12, 0, 0) };
+        var s = new StackPanel { Margin = new Thickness(4, 8, 4, 0) };
         int shown = b?.Shown ?? -1;
         var head = new DockPanel();
         var v = Neu.T(shown < 0 ? "–" : shown + "%", 13, shown < 0 ? Neu.P.Muted : Neu.UsageColor(shown), FontWeight.SemiBold);
@@ -1010,6 +1010,15 @@ public class DashboardView : Border
             return m;
         }
 
+        if (snap.Pid(p) != 0)
+        {
+            menu.Items.Add(Item("Restart its window", async () =>
+            {
+                if (await Dialogs.Ask(Owner, "Restart " + p.Name + "?", "Its window closes and reopens. Anything running in it stops.", "Restart", "Cancel") == 0)
+                    Later(() => Launcher.Restart(p), 6000);
+            }));
+            menu.Items.Add(new Separator());
+        }
         menu.Items.Add(Item("Open Claude Code in a terminal", () => _ = ProfileActions.OpenTerminal(Owner, snap, p, pickFolder: false)));
         menu.Items.Add(Item("Open Claude Code in a folder…", () => _ = ProfileActions.OpenTerminal(Owner, snap, p, pickFolder: true)));
         menu.Items.Add(Item("Copy the terminal command", () => _ = ProfileActions.CopyCommand(Owner, p)));

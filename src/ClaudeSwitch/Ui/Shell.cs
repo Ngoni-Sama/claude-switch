@@ -556,13 +556,13 @@ public static class Shell
                     after.Stop();
                     Save(main, Path.Combine(dir, "dashboard-" + Neu.P.Name + "-lower.png"));
                     // Then each sidebar page.
-                    var pages = new Queue<string>(new[] { "sessions", "linked", "memory", "updates", "backup", "settings" });
+                    var pages = new Queue<string>(new[] { "sessions", "linked", "memory", "updates", "backup", "terminal", "settings", "support" });
                     var next = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
                     string shown = null;
                     next.Tick += (_, _) =>
                     {
                         if (shown != null) Save(main, Path.Combine(dir, "page-" + shown + "-" + Neu.P.Name + ".png"));
-                        if (pages.Count == 0) { next.Stop(); Exit(); return; }
+                        if (pages.Count == 0) { next.Stop(); SignInShots(dir); return; }
                         shown = pages.Dequeue();
                         dashboard.Show(shown);
                     };
@@ -576,6 +576,31 @@ public static class Shell
             after.Start();
         };
         t.Start();
+    }
+
+    // The sign-in window a new profile opens with: waiting, then the same-account warning.
+    static void SignInShots(string dir)
+    {
+        var demo = new ProfileEntry { Name = "Client B", DataDir = Path.Combine(Path.GetTempPath(), "claude-switch-demo-signin") };
+        var shots = new Queue<(bool same, string name)>(new[] { (false, "signin-waiting"), (true, "signin-same-account") });
+        void Next()
+        {
+            if (shots.Count == 0) { Exit(); return; }
+            var (same, name) = shots.Dequeue();
+            _ = SignInWindow.Show(null, demo, true, () => { }, w =>
+            {
+                w.ShowActivated = false;
+                w.ShowInTaskbar = false;
+                w.WindowStartupLocation = WindowStartupLocation.Manual;
+                w.Position = new PixelPoint(-32000, 0);
+                if (w.Content is Panel root) root.Background = Neu.B(Neu.P.Bg);   // text renders onto a solid page, not transparency
+                w.Show();
+                var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+                t.Tick += (_, _) => { t.Stop(); Save(w, Path.Combine(dir, name + "-" + Neu.P.Name + ".png")); w.Close(); Next(); };
+                t.Start();
+            }, same);
+        }
+        Next();
     }
 
     // The whole dashboard at once, however long, on the page colour.

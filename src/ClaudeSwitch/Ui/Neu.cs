@@ -145,7 +145,7 @@ public static class Neu
     public static Control Stat(string number, string unit, Color? color = null)
     {
         var s = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        s.Children.Add(new TextBlock { Text = number, FontSize = Dense ? 24 : 28, Foreground = B(color ?? P.Text), VerticalAlignment = VerticalAlignment.Bottom });
+        s.Children.Add(new TextBlock { Text = number, FontSize = Dense ? 21 : 24, Foreground = B(color ?? P.Text), VerticalAlignment = VerticalAlignment.Bottom });
         s.Children.Add(new TextBlock { Text = unit, FontSize = 13.5, Foreground = B(P.Text), VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 5) });
         AutomationProperties.SetName(s, number + " " + unit);
         return s;

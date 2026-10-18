@@ -15,7 +15,8 @@ public static class SignInWindow
 {
     enum State { Waiting, Checking, SameAccount, Ready }
 
-    public static Task Show(Window owner, ProfileEntry p, bool isNew, Action reload)
+    // screenshot: build the window (demo data) and hand it over instead of opening Claude.
+    public static Task Show(Window owner, ProfileEntry p, bool isNew, Action reload, Action<Window> screenshot = null, bool sameAccount = false)
     {
         var done = new TaskCompletionSource();
         var w = Dialogs.Frame("Sign in to " + p.Name, 540);
@@ -72,6 +73,14 @@ public static class SignInWindow
             finish.IsEnabled = s == State.Ready;
         }
         Set(State.Waiting, "Waiting for you to sign in…", "This updates by itself as soon as you've signed in.");
+        if (screenshot != null)
+        {
+            if (sameAccount)
+                Set(State.SameAccount, "That's the same account as Work",
+                    "alex@work.example.com is already used by Work. In " + p.Name + "'s Claude window, log out (click your name, then Log out) and sign in with a different account.");
+            screenshot(w);
+            return Task.CompletedTask;
+        }
 
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         timer.Tick += async (_, _) =>

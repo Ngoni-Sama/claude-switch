@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Switch manual</title>
+<meta name="description" content="How to use Claude Switch: profiles and sign-in, usage, sessions, linked computers, shared memory, backups, terminal and settings.">
+<meta property="og:title" content="Claude Switch manual">
+<meta property="og:image" content="https://ngoni-sama.github.io/claude-switch/assets/screens/dashboard-light.png">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<style>
+  /* The app's own look: violet sidebar whose current item is an open pill. */
+  :root {
+    --bg: #efedf6; --card: #ffffff; --inner: #f4f3f9; --border: #e4e1ef; --text: #1e1b2e; --muted: #5f5a72;
+    --accent: #5240cf; --accent2: #9a55e8; --soft: #ece8fb; --side-a: #5a3fc0; --side-b: #2e1f6e; --side-text: #ffffff;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17151f; --card: #221f2d; --inner: #2d2a3a; --border: #363246; --text: #f3f1fa; --muted: #a7a2b8;
+      --accent: #8f80ff; --accent2: #c48bff; --soft: #2e2752; --side-a: #2c2157; --side-b: #120d26; --side-text: #f2efff;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17151f; --card: #221f2d; --inner: #2d2a3a; --border: #363246; --text: #f3f1fa; --muted: #a7a2b8;
+    --accent: #8f80ff; --accent2: #c48bff; --soft: #2e2752; --side-a: #2c2157; --side-b: #120d26; --side-text: #f2efff;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15.5px/1.6 "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); }
+  img { max-width: 100%; display: block; }
+  code { font: 13.5px/1 ui-monospace, "Cascadia Code", Consolas, monospace; background: var(--soft); padding: 2px 6px; border-radius: 5px; }
+
+  .layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 100vh; }
+  .side { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 22px 0 22px 16px;
+    background: linear-gradient(180deg, var(--side-a), var(--side-b)); color: var(--side-text); }
+  .brand { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; font-weight: 700; margin: 0 16px 22px 6px; }
+  .brand img { width: 34px; height: 34px; border-radius: 9px; background: #fff; padding: 2px; }
+  .brand small { display: block; font-weight: 400; opacity: .72; font-size: 12px; }
+  .toc { list-style: none; margin: 0; padding: 0; }
+  .toc a { position: relative; display: block; padding: 9px 14px; margin-right: 16px; border-radius: 12px;
+    color: inherit; text-decoration: none; font-size: 14px; opacity: .9; }
+  .toc a:hover { background: rgba(255,255,255,.12); opacity: 1; }
+  /* The open pill: runs to the edge in the page colour, curving into it above and below. */
+  .toc a.on { background: var(--bg); color: var(--accent); font-weight: 600; opacity: 1; margin-right: 0; border-radius: 22px 0 0 22px; }
+  .toc a.on::before, .toc a.on::after { content: ""; position: absolute; right: 0; width: 20px; height: 20px; pointer-events: none;
+    background: radial-gradient(circle at 0 0, transparent 19.5px, var(--bg) 20px); }
+  .toc a.on::before { top: -20px; }
+  .toc a.on::after { bottom: -20px; background: radial-gradient(circle at 0 100%, transparent 19.5px, var(--bg) 20px); }
+  .side .links { margin: 24px 16px 0 8px; font-size: 13px; opacity: .8; }
+  .side .links a { color: inherit; }
+
+  .top { position: sticky; top: 0; z-index: 2; background: var(--card); box-shadow: 0 1px 0 rgba(0,0,0,.06);
+    display: flex; align-items: center; gap: 12px; padding: 14px 36px; }
+  .top h1 { font-size: 20px; margin: 0 auto 0 0; letter-spacing: -.3px; }
+  .btn { display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 10px; border: 0;
+    background: var(--inner); color: var(--text); font: inherit; font-size: 14px; font-weight: 600; text-decoration: none; cursor: pointer; }
+  .btn.primary { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; }
+  .btn:focus-visible, .toc a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  main { padding: 26px 36px 60px; max-width: 1080px; }
+  .lede { color: var(--muted); margin: 0 0 22px; }
+  section { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px 28px; margin-bottom: 18px;
+    box-shadow: 0 6px 18px rgba(40, 20, 90, .06); }
+  section h2 { margin: 0 0 10px; font-size: 21px; letter-spacing: -.3px; }
+  section p { margin: 0 0 12px; }
+  ol, ul { margin: 0 0 14px; padding-left: 22px; }
+  li { margin: 4px 0; }
+  ol li::marker { color: var(--accent); font-weight: 700; }
+  .tip { background: var(--soft); border-radius: 12px; padding: 12px 16px; margin: 6px 0 12px; }
+  figure { margin: 8px 0 16px; }
+  figure img { border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(40, 20, 90, .12); }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 8px; text-align: center; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  footer { color: var(--muted); font-size: 13px; padding: 0 36px 30px; }
+
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    .side { position: static; height: auto; padding: 16px; }
+    .toc { display: flex; flex-wrap: wrap; gap: 4px; }
+    .toc a, .toc a.on { margin: 0; border-radius: 10px; padding: 7px 12px; }
+    .toc a.on::before, .toc a.on::after { display: none; }
+    .side .links { display: none; }
+    .top { padding: 12px 16px; }
+    main { padding: 18px 16px 40px; }
+    section { padding: 18px 16px; }
+    .pair { grid-template-columns: 1fr; }
+    footer { padding: 0 16px 24px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="side" aria-label="Manual">
+    <a class="brand" href="index.html"><img src="assets/icon-512.png" alt=""><span>Claude Switch<small>Manual</small></span></a>
+    <ul class="toc">
+      <li><a href="#start" class="on">Get started</a></li>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#profiles">Add a profile and sign in</a></li>
+      <li><a href="#sessions">Sessions</a></li>
+      <li><a href="#linked">Linked computers</a></li>
+      <li><a href="#memory">Shared memory</a></li>
+      <li><a href="#updates">Updates</a></li>
+      <li><a href="#backup">Backup &amp; move</a></li>
+      <li><a href="#terminal">Terminal</a></li>
+      <li><a href="#settings">Settings</a></li>
+      <li><a href="#screens">Small screens, light and dark</a></li>
+      <li><a href="#help">When something looks wrong</a></li>
+    </ul>
+    <p class="links"><a href="index.html">Website</a> &middot; <a href="https://github.com/Ngoni-Sama/claude-switch">Source</a></p>
+  </nav>
+  <div>
+    <header class="top">
+      <h1>Manual</h1>
+      <button class="btn" id="theme" type="button">Dark</button>
+      <a class="btn primary" href="index.html#install">Download</a>
+    </header>
+    <main>
+      <p class="lede">How to use every part of Claude Switch. Screenshots use made-up demo data.</p>
+      <section id="start">
+        <h2>Get started</h2>
+        <p>Claude Switch runs several Claude Desktop accounts side by side, each in its own window, e.g. <b>Work</b> and <b>Personal</b>. It shows every account's usage and reset times, and hands a session to another account when one runs out.</p>
+        <ol><li>Install <a href="https://claude.ai/download">Claude Desktop</a> if you haven't, then install Claude Switch from the <a href="https://ngoni-sama.github.io/claude-switch/#install">download page</a>.</li><li>Open <b>Claude Switch</b>. Name the account Claude is already signed in to (e.g. <i>Personal</i>), then your other accounts (e.g. <i>Work</i>).</li><li>Each new profile opens its own Claude window. Sign in there with that profile's account. You do this once per profile.</li></ol>
+        <figure><img src="assets/screens/onboarding-light.png" data-light="assets/screens/onboarding-light.png" data-dark="assets/screens/onboarding-dark.png" alt="First launch: name the account you already use, then add the others" loading="lazy"><figcaption>First launch: name the account you already use, then add the others</figcaption></figure>
+        <p class="tip"><b>Tip.</b> Every profile needs <b>its own account</b>. Two profiles on one account would share one usage limit, so Claude Switch asks you to sign in with a different one.</p>
+      </section>
+      <section id="overview">
+        <h2>Overview</h2>
+        <p>The home page. Four tiles along the top sum things up: how many profiles you have (and how many are open), which account has the <b>most room left</b>, how many Claude Code sessions there are, and which Claude version you run.</p>
+        <figure><img src="assets/screens/dashboard-light.png" data-light="assets/screens/dashboard-light.png" data-dark="assets/screens/dashboard-dark.png" alt="The Overview page: summary tiles, a banner, and one card per profile with session and weekly usage rings" loading="lazy"><figcaption>The Overview page: summary tiles, a banner, and one card per profile with session and weekly usage rings</figcaption></figure>
+        <p>Below are <b>banners</b> for anything that needs you (a transfer waiting, an account at its limit, a profile with no account) and <b>one card per profile</b>:</p>
+        <ul><li><b>Name and pencil.</b> Click the pencil (or double-click the name) to rename the profile. Its launchers and terminal command follow; nothing needs signing in again.</li><li><b>Open / Closed / Not signed in</b>, the account email and organisation.</li><li><b>Usage rings.</b> <i>Session</i> and <i>Weekly</i>, worded like Claude's own panel. <b>0% means all available, 100% means used up.</b> Reset times are under each ring.</li><li><b>Switch to / Open</b> brings that profile's Claude window forward or opens it. A profile with no account shows <b>Sign in</b> instead.</li><li><b>Paste report.</b> For exact numbers, copy the usage report in that profile's Claude window (it starts with <i>Claude Code usage report</i>) and press this. Claude Switch also notices it on its own.</li><li><b>··· (More)</b>: restart the window, open Claude Code in a terminal as this profile, copy MCP servers from another profile, duplicate, rename, pick a colour, open at start-up, show its folder, or remove it.</li></ul>
+      </section>
+      <section id="profiles">
+        <h2>Add a profile and sign in</h2>
+        <ol><li>On <b>Overview</b>, press <b>+ Add profile</b> and name it, e.g. <i>Client A</i>.</li><li>A Claude window opens for it straight away, with a <b>Sign in to Client A</b> window beside it.</li><li>Sign in in the new Claude window. The sign-in window updates by itself and turns green when it's done. Press <b>Done</b>.</li></ol>
+        <div class="pair"><figure><img src="assets/screens/signin-waiting-light.png" data-light="assets/screens/signin-waiting-light.png" data-dark="assets/screens/signin-waiting-dark.png" alt="Sign-in window waiting for the new profile to sign in" loading="lazy"><figcaption>Sign-in window waiting for the new profile to sign in</figcaption></figure><figure><img src="assets/screens/signin-same-account-light.png" data-light="assets/screens/signin-same-account-light.png" data-dark="assets/screens/signin-same-account-dark.png" alt="Sign-in window warning that the account is already used by another profile" loading="lazy"><figcaption>Sign-in window warning that the account is already used by another profile</figcaption></figure></div>
+        <p>If you sign in with an account another profile already uses, it says which one and keeps <b>Done</b> greyed out. In that Claude window, click your name, choose <b>Log out</b>, and sign in with a different account.</p>
+        <p>Closing the window before signing in offers to <b>remove</b> the new profile (a profile with no account can't be used) or keep it for later. Profiles without an account, and two profiles sharing one, get a banner on Overview with a button to fix it.</p>
+        <p class="tip"><b>Tip.</b> Signing in with an email link or in your browser? The link can open in your main Claude window instead. Press <b>Turn on sign-in links</b> first (Windows) so it always reaches the window that asked for it.</p>
+      </section>
+      <section id="sessions">
+        <h2>Sessions</h2>
+        <p>Claude Code conversations from each signed-in account, newest first. When an account runs out of usage, pick the session and press <b>Continue in Personal →</b> (or any other profile). The conversation is copied there and the original stays where it is.</p>
+        <figure><img src="assets/screens/page-sessions-light.png" data-light="assets/screens/page-sessions-light.png" data-dark="assets/screens/page-sessions-dark.png" alt="The Sessions page with a tab per profile and Continue in buttons" loading="lazy"><figcaption>The Sessions page with a tab per profile and Continue in buttons</figcaption></figure>
+      </section>
+      <section id="linked">
+        <h2>Linked computers</h2>
+        <p>Send profiles to your other computers over the internet, wherever they are: another office, another country. Transfers are <b>end-to-end encrypted</b> to the receiving computer and sign-ins never travel.</p>
+        <figure><img src="assets/screens/page-linked-light.png" data-light="assets/screens/page-linked-light.png" data-dark="assets/screens/page-linked-dark.png" alt="The Linked computers page: transfers on the left, this computer&#x27;s address and linked computers on the right" loading="lazy"><figcaption>The Linked computers page: transfers on the left, this computer&#x27;s address and linked computers on the right</figcaption></figure>
+        <ol><li>Press <b>Turn on</b>. This computer gets an address like <code>CS-7KQ2M-9XD4T-PAW8R-ZH3NC-5VJE</code>. Press <b>Copy address</b>.</li><li>On the other computer, press <b>Link a computer…</b> and paste the address. The first computer gets a request; press <b>Accept</b>. You only link once.</li><li>Press <b>Send profiles…</b> next to a linked computer and tick the profiles to send.</li><li>On the other computer, a banner appears: press <b>Receive</b>. It imports straight away; nothing there is overwritten.</li></ol>
+        <p>Every transfer has a short <b>ID</b> like <code>#A1B2C3</code>, shown on both computers, and the <b>Transfers</b> card shows it live:</p>
+        <ul><li><b>Speed and time left</b> while it uploads (e.g. <i>12.4 of 48 MB at 1.1 MB/s, about 30 s left</i>). The receiving computer sees the upload progress too.</li><li><b>Resume.</b> If the connection drops, the transfer is <i>Paused</i>. Press <b>Resume</b> and it carries on from the parts already sent. It also resumes when Claude Switch starts.</li><li><b>No duplicates.</b> Sending the same profiles again resumes or replaces the copy that's waiting, so the other computer only ever gets one.</li><li>Closing the send window doesn't stop it: press <b>Hide (keeps sending)</b>. <b>Cancel</b> stops it and deletes it from the relay.</li><li>A transfer waits on the relay for up to a week, so the other computer needn't be on, and is deleted once collected or declined.</li></ul>
+        <p class="tip"><b>Tip.</b> Update both computers to the same version of Claude Switch before sending.</p>
+      </section>
+      <section id="memory">
+        <h2>Shared memory</h2>
+        <p>Let accounts share one memory and one set of conversations. When one runs out of usage, open another and carry on from exactly where you left off: same projects, same notes, same chats. Sign-ins stay separate.</p>
+        <figure><img src="assets/screens/page-memory-light.png" data-light="assets/screens/page-memory-light.png" data-dark="assets/screens/page-memory-dark.png" alt="The Shared memory page showing shared projects, memory notes and conversations" loading="lazy"><figcaption>The Shared memory page showing shared projects, memory notes and conversations</figcaption></figure>
+        <p>Press <b>Turn on sharing</b>, pick the profiles, and close their Claude windows while it sets up. <b>Turn off</b> gives each profile its own copy back; nothing is deleted.</p>
+      </section>
+      <section id="updates">
+        <h2>Updates</h2>
+        <p>Shows every installed copy of Claude and its version, and spots the classic trap: a second, forgotten copy that stopped updating. <b>Restart all profiles</b> moves windows onto the current copy; <b>Check for a newer Claude</b> opens the updater. Choose <b>Tell me</b>, <b>Automatic</b> (opens profiles that are behind so Claude's own updater runs) or <b>Off</b>.</p>
+        <figure><img src="assets/screens/page-updates-light.png" data-light="assets/screens/page-updates-light.png" data-dark="assets/screens/page-updates-dark.png" alt="The Updates page with the installed Claude version" loading="lazy"><figcaption>The Updates page with the installed Claude version</figcaption></figure>
+      </section>
+      <section id="backup">
+        <h2>Backup &amp; move</h2>
+        <p><b>Export…</b> saves profiles (sessions, memory, settings) to one password-protected file; <b>Import…</b> brings them back on any computer, e.g. after a crash. Sign-ins are never exported. Or send them straight to a linked computer.</p>
+        <figure><img src="assets/screens/page-backup-light.png" data-light="assets/screens/page-backup-light.png" data-dark="assets/screens/page-backup-dark.png" alt="The Backup and move page with Export, Import and Linked computers" loading="lazy"><figcaption>The Backup and move page with Export, Import and Linked computers</figcaption></figure>
+      </section>
+      <section id="terminal">
+        <h2>Terminal</h2>
+        <p>Run Claude Code as any profile. <b>Turn on terminal commands</b> to type <code>claude-work</code>, <code>claude-personal</code>, … in any terminal, and <b>Add a folder rule</b> so plain <code>claude</code> picks the right profile inside a project. Or use <b>··· &gt; Open Claude Code in a terminal</b> on a profile card.</p>
+        <figure><img src="assets/screens/page-terminal-light.png" data-light="assets/screens/page-terminal-light.png" data-dark="assets/screens/page-terminal-dark.png" alt="The Terminal page" loading="lazy"><figcaption>The Terminal page</figcaption></figure>
+      </section>
+      <section id="settings">
+        <h2>Settings</h2>
+        <ul><li><b>Keyboard shortcuts</b> (Windows): Ctrl+Alt+1 to 9 open a profile; Ctrl+Alt+0 opens Claude Switch.</li><li><b>Reopen profiles when a Claude update closes them.</b></li><li><b>Start Claude Switch when I sign in</b>, and offer to reopen the profiles you had open.</li><li><b>Claude Switch updates</b>: Tell me, Automatic or Off. Updates are signed and only installed if the signature and checksum match.</li><li><b>Diagnose…</b> writes one report: where each profile's data lives, which Claude each window runs, sign-in state and launchers, with a fix for anything wrong. Emails are masked so you can paste it into an issue.</li></ul>
+        <figure><img src="assets/screens/page-settings-light.png" data-light="assets/screens/page-settings-light.png" data-dark="assets/screens/page-settings-dark.png" alt="The Settings page" loading="lazy"><figcaption>The Settings page</figcaption></figure>
+      </section>
+      <section id="screens">
+        <h2>Small screens, light and dark</h2>
+        <p>On a laptop, or when the window isn't maximised, everything gets tighter. Narrower still, the sidebar shrinks to icons; hover one to see its name. Switch between <b>Light</b> and <b>Dark</b> at the top right of any page.</p>
+        <div class="pair"><figure><img src="assets/screens/compact-light.png" alt="Compact layout on a small laptop window" loading="lazy"><figcaption>Compact layout on a small laptop window</figcaption></figure><figure><img src="assets/screens/narrow-dark.png" alt="Narrow window in dark mode with an icon-only sidebar" loading="lazy"><figcaption>Narrow window in dark mode with an icon-only sidebar</figcaption></figure></div>
+      </section>
+      <section id="help">
+        <h2>When something looks wrong</h2>
+        <ul><li><b>"X and Y have swapped accounts".</b> A sign-in link opened in the wrong window. Press <b>Swap names</b>; nobody signs in again.</li><li><b>"X has no account yet".</b> Press <b>Sign in to X</b>, or <b>Remove</b> it if you don't need it.</li><li><b>"X and Y use the same account".</b> Press <b>Sign Y in again</b> and use a different account.</li><li><b>A transfer says Paused.</b> Check your connection and press <b>Resume</b> on the Linked computers page.</li><li><b>Usage looks old.</b> Copy the usage report in that Claude window and press <b>Paste report</b>.</li><li><b>Anything else.</b> Settings &gt; <b>Diagnose…</b>, then <a href="https://github.com/Ngoni-Sama/claude-switch/issues">report an issue</a> with the report.</li></ul>
+        <p>For scripts: <code>ClaudeSwitch --list</code>, <code>--open Work</code>, <code>--diagnose</code>, <code>--check-update</code>, <code>--version</code>.</p>
+      </section>
+    </main>
+    <footer>Claude Switch &middot; MIT License &middot; &copy; 2026 <a href="https://github.com/Ngoni-Sama">Ngoni Maphosa</a>. "Claude" is a trademark of Anthropic, PBC; Claude Switch is not affiliated with or endorsed by Anthropic.</footer>
+  </div>
+</div>
+<script>
+  // Light/dark: follows the system until you pick one.
+  const root = document.documentElement, btn = document.getElementById('theme');
+  const dark = () => root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  const swap = on => document.querySelectorAll('img[data-dark]').forEach(i => { i.src = on ? i.dataset.dark : i.dataset.light; });
+  const paint = () => { btn.textContent = dark() ? 'Light' : 'Dark'; swap(dark()); };
+  try { const t = localStorage.getItem('cs-theme'); if (t) root.dataset.theme = t; } catch (e) {}
+  btn.addEventListener('click', () => { root.dataset.theme = dark() ? 'light' : 'dark'; try { localStorage.setItem('cs-theme', root.dataset.theme); } catch (e) {} paint(); });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paint);
+  paint();
+
+  // The open pill follows the section you're reading.
+  const links = [...document.querySelectorAll('.toc a')];
+  const mark = id => links.forEach(a => a.classList.toggle('on', a.hash === '#' + id));
+  const seen = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) mark(e.target.id); }), { rootMargin: '-20% 0px -70% 0px' });
+  document.querySelectorAll('main section').forEach(s => seen.observe(s));
+</script>
+</body>
+</html>

@@ -23,6 +23,7 @@
 
 <p align="center">
   <a href="https://ngoni-sama.github.io/claude-switch/#video"><b>Watch the 40-second tour</b></a> &nbsp;&middot;&nbsp;
+  <a href="MANUAL.md"><b>Manual</b></a> &nbsp;&middot;&nbsp;
   <a href="docs/assets/screens/dashboard-dark.png">Dark theme</a> &nbsp;&middot;&nbsp;
   <a href="https://ngoni-sama.github.io/claude-switch/">Website</a>
 </p>
@@ -79,10 +80,20 @@ New open-source projects aren't code-signed yet, so your OS may ask once:
 Free code signing through the [SignPath Foundation](https://signpath.org) is planned so these go away.
 </details>
 
+## Manual
+
+Step-by-step, with a screenshot of every page: **[MANUAL.md](MANUAL.md)**, or [on the website](https://ngoni-sama.github.io/claude-switch/manual.html).
+
+<table>
+<tr><td width="33%" align="center"><a href="MANUAL.md#overview"><img src="docs/assets/screens/dashboard-light.png" alt="Overview"></a><br><sub><b>Overview</b></sub></td><td width="33%" align="center"><a href="MANUAL.md#add-a-profile-and-sign-in"><img src="docs/assets/screens/signin-waiting-light.png" alt="Add a profile and sign in"></a><br><sub><b>Add a profile and sign in</b></sub></td><td width="33%" align="center"><a href="MANUAL.md#sessions"><img src="docs/assets/screens/page-sessions-light.png" alt="Sessions"></a><br><sub><b>Sessions</b></sub></td></tr>
+<tr><td width="33%" align="center"><a href="MANUAL.md#linked-computers"><img src="docs/assets/screens/page-linked-light.png" alt="Linked computers"></a><br><sub><b>Linked computers</b></sub></td><td width="33%" align="center"><a href="MANUAL.md#shared-memory"><img src="docs/assets/screens/page-memory-light.png" alt="Shared memory"></a><br><sub><b>Shared memory</b></sub></td><td width="33%" align="center"><a href="MANUAL.md#updates"><img src="docs/assets/screens/page-updates-light.png" alt="Updates"></a><br><sub><b>Updates</b></sub></td></tr>
+<tr><td width="33%" align="center"><a href="MANUAL.md#backup--move"><img src="docs/assets/screens/page-backup-light.png" alt="Backup &amp; move"></a><br><sub><b>Backup &amp; move</b></sub></td><td width="33%" align="center"><a href="MANUAL.md#terminal"><img src="docs/assets/screens/page-terminal-light.png" alt="Terminal"></a><br><sub><b>Terminal</b></sub></td><td width="33%" align="center"><a href="MANUAL.md#small-screens-light-and-dark"><img src="docs/assets/screens/narrow-dark.png" alt="Small screens, light and dark"></a><br><sub><b>Small screens, light and dark</b></sub></td></tr>
+</table>
+
 ## How to use
 
 1. Open **Claude Switch**. Name the account Claude is already signed into (e.g. *Personal*), then your others (e.g. *Work*).
-2. Click **Open** on a profile. A new Claude window appears; sign in with that account. Each profile signs in once.
+2. Each new profile opens its own Claude window straight away; sign in there with that account. Each profile needs its own account (Claude Switch tells you if two share one), and signs in once.
 3. That's it: each profile has a launcher (*Claude (Work)*), and the tray icon lists them all.
 
 **Live usage numbers.** Claude only logs usage now and then. For exact numbers, copy the usage report in a

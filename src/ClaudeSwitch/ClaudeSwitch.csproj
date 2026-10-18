@@ -15,7 +15,7 @@
          ones) only partly support CET and .NET then refuses to start. -->
     <CETCompat>false</CETCompat>
 
-    <Version>2.6.0</Version>
+    <Version>2.6.1</Version>
     <Product>Claude Switch</Product>
     <Company>Ngoni Maphosa</Company>
     <Authors>Ngoni Maphosa (Ngoni-Sama)</Authors>

@@ -66,7 +66,7 @@ public class Ring : Control
         if (caption != null)
         {
             var cap = new FormattedText(caption.ToUpperInvariant(), System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-                new Typeface(FontFamily.Default), size * 0.095, Neu.B(Neu.P.Muted));
+                new Typeface(FontFamily.Default), Math.Max(8.5, size * 0.095), Neu.B(Neu.P.Muted));
             ctx.DrawText(cap, new Point(c.X - cap.Width / 2, y + ft.Height - 1));
         }
     }
