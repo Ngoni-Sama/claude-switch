@@ -90,6 +90,8 @@ public class LinkEndToEndTests : IDisposable
 
     bool TryStartRelay()
     {
+        // CS_RELAY_URL runs these against a deployed relay instead (smoke test).
+        if (Environment.GetEnvironmentVariable("CS_RELAY_URL") is string live && live.Length > 0) { url = live.TrimEnd('/'); return true; }
         string repo = RepoRoot();
         if (repo == null) return false;
         int port;
