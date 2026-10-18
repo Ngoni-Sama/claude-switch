@@ -23,15 +23,26 @@ class Statement {
 const env = {
   DB: {
     prepare: sql => new Statement(sql),
+    // Synchronous inside the transaction, so parallel requests never interleave in it.
     batch: async stmts => {
       db.exec('BEGIN');
-      try { const out = []; for (const s of stmts) out.push(await s.run()); db.exec('COMMIT'); return out; }
-      catch (e) { db.exec('ROLLBACK'); throw e; }
+      try {
+        const out = stmts.map(s => { const r = db.prepare(s.sql).run(...s.args); return { meta: { changes: Number(r.changes) } }; });
+        db.exec('COMMIT');
+        return out;
+      } catch (e) { db.exec('ROLLBACK'); throw e; }
     },
   },
 };
 
-createServer(async (req, res) => {
+// A client that drops mid-request (a cancelled upload) must never take the server down.
+createServer((req, res) => handle(req, res).catch(e => {
+  console.error(e);
+  if (!res.headersSent) res.writeHead(500);
+  res.end();
+})).listen(port, () => console.log('claude-switch relay on http://localhost:' + port));
+
+async function handle(req, res) {
   const chunks = [];
   for await (const c of req) chunks.push(c);
   const body = Buffer.concat(chunks);
@@ -46,4 +57,4 @@ createServer(async (req, res) => {
   const response = await worker.fetch(request, env);
   res.writeHead(response.status, Object.fromEntries(response.headers));
   res.end(Buffer.from(await response.arrayBuffer()));
-}).listen(port, () => console.log('claude-switch relay on http://localhost:' + port));
+}
