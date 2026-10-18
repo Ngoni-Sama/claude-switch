@@ -246,8 +246,13 @@ public class RelayClient : IDisposable
 
     public Task Register(LinkIdentity me)
     {
+        // Signed with the address's own key, so only its owner can register it
+        // or change its mailbox secret.
+        string secretHash = Convert.ToHexStringLower(SHA256.HashData(me.Secret));
+        long ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        string proof = LinkCrypto.B64(me.Sig.SignData(Encoding.UTF8.GetBytes("register|" + me.Address + "|" + secretHash + "|" + ts), HashAlgorithmName.SHA256));
         var req = Auth(HttpMethod.Put, "/v1/keys/" + me.Address, me);
-        req.Content = JsonBody(new JsonObject { ["ecdh"] = me.EcdhPub, ["sig"] = me.SigPub, ["secretHash"] = Convert.ToHexStringLower(SHA256.HashData(me.Secret)) });
+        req.Content = JsonBody(new JsonObject { ["ecdh"] = me.EcdhPub, ["sig"] = me.SigPub, ["secretHash"] = secretHash, ["ts"] = ts, ["proof"] = proof });
         return Send(req);
     }
 

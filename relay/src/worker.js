@@ -10,11 +10,14 @@
 // Addresses are self-certifying: address = Crockford-base32(SHA-256(ecdhKey ||
 // signingKey)[0..15]), so a mailbox can only ever hold the keys that hash to
 // it. Mailboxes are read with a secret whose SHA-256 was set at registration;
-// messages are accepted only when signed by a registered sender.
+// only the address's owner can set or change it (a signature by its private
+// key, or the current secret), and mailboxes are never recycled, so nobody can
+// take over an address. Messages are accepted only when signed by a
+// registered sender.
 //
 // API (JSON unless noted; binary fields are base64url):
 //   GET    /v1/info                        limits
-//   PUT    /v1/keys/:addr                  { ecdh, sig, secretHash }      register
+//   PUT    /v1/keys/:addr                  { ecdh, sig, secretHash, ts, proof }   register
 //   GET    /v1/keys/:addr                  { ecdh, sig }
 //   POST   /v1/mail/:to                    { header, signature, size, parts } -> { id, uploadToken }
 //   PUT    /v1/mail/:to/:id/:n             raw bytes, X-Upload-Token
@@ -75,6 +78,13 @@ async function authorized(env, req, addr) {
   return diff === 0;
 }
 
+// proof = ECDSA("register|<addr>|<secretHash>|<ts>") by the address's signing key.
+async function proves(sig, addr, secretHash, ts, proof) {
+  if (!proof || !Number.isInteger(ts) || Math.abs(now() - ts) > 600) return false;
+  const text = enc.encode('register|' + addr + '|' + secretHash + '|' + ts);
+  return verifySigned(sig, btoa(String.fromCharCode(...text)), proof);
+}
+
 async function verifySigned(sigKeyB64, headerB64, signatureB64) {
   try {
     const key = await crypto.subtle.importKey('spki', b64d(sigKeyB64), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
@@ -85,17 +95,25 @@ async function verifySigned(sigKeyB64, headerB64, signatureB64) {
 async function register(env, req, addr) {
   let body;
   try { body = await req.json(); } catch { return fail(400, 'bad json'); }
-  const { ecdh, sig, secretHash } = body || {};
+  const { ecdh, sig, secretHash, ts, proof } = body || {};
   if (!ecdh || !sig || !/^[0-9a-f]{64}$/.test(secretHash || '')) return fail(400, 'missing keys');
   if (await addressOf(ecdh, sig) !== addr) return fail(400, 'keys do not match this address');
   const existing = await env.DB.prepare('SELECT ecdh, sig FROM mailbox WHERE addr = ?').bind(addr).first();
+  const proven = await proves(sig, addr, secretHash, ts, proof);
+  if (proof && !proven) return fail(403, 'bad proof');
   if (existing) {
     if (existing.ecdh !== ecdh || existing.sig !== sig) return fail(409, 'address taken');
-    // Same keys: allow the owner (who proves the old secret) to set a new one.
-    if (await authorized(env, req, addr))
+    // Same (public) keys: only the owner may set the secret: proof by its
+    // private key, or the current secret.
+    if (proven || await authorized(env, req, addr)) {
       await env.DB.prepare('UPDATE mailbox SET secret_hash = ? WHERE addr = ?').bind(secretHash, addr).run();
-    return json({ ok: true, address: addr });
+      return json({ ok: true, address: addr });
+    }
+    return fail(403, 'this address is already registered');
   }
+  // A new address. Its keys can't be public yet (they're only published by
+  // registering), so first registration doesn't strictly need the proof; the
+  // app sends it anyway.
   await env.DB.prepare('INSERT INTO mailbox (addr, ecdh, sig, secret_hash, created, seen) VALUES (?, ?, ?, ?, ?, ?)')
     .bind(addr, ecdh, sig, secretHash, now(), now()).run();
   return json({ ok: true, address: addr }, 201);
@@ -209,13 +227,13 @@ export default {
     }
   },
 
-  // Daily: drop expired transfers, and mailboxes idle for half a year with nothing waiting.
+  // Daily: drop expired transfers. Mailboxes are kept (a few hundred bytes
+  // each): recycling one would let someone else register a dormant address.
   async scheduled(_event, env) {
     const t = now();
     await env.DB.batch([
       env.DB.prepare('DELETE FROM part WHERE msg_id IN (SELECT id FROM message WHERE expires <= ?)').bind(t),
       env.DB.prepare('DELETE FROM message WHERE expires <= ?').bind(t),
-      env.DB.prepare('DELETE FROM mailbox WHERE seen < ? AND addr NOT IN (SELECT to_addr FROM message)').bind(t - 180 * 86400),
     ]);
   },
 };

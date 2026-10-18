@@ -200,6 +200,43 @@ public class LinkEndToEndTests : IDisposable
         Assert.Empty(Link.Peers());
     }
 
+    // relay/security-check.mjs tries to read, download, delete, take over,
+    // impersonate and inject; every attempt must be refused.
+    [Fact]
+    public void NobodyCanReachDataForAnAddressTheyDontOwn()
+    {
+        if (!StartRelay()) return;
+        var p = Process.Start(new ProcessStartInfo("node", "relay/security-check.mjs " + url)
+        {
+            WorkingDirectory = RepoRoot(), RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
+        });
+        string output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+        p.WaitForExit(120_000);
+        Assert.True(p.ExitCode == 0, output);
+        Assert.DoesNotContain("LEAKED", output);
+        Assert.Contains("All attempts refused.", output);
+    }
+
+    [Fact]
+    public async Task CopiedPublicKeysCantTakeOverAnAddress()
+    {
+        if (!StartRelay()) return;
+        using var c = new RelayClient(url);
+        LinkIdentity real = LinkIdentity.Create();
+        await c.Register(real);
+        // A thief reads the public keys and tries to set its own mailbox secret.
+        byte[] thiefSecret = RandomNumberGenerator.GetBytes(32);
+        using var http = new HttpClient();
+        var put = await http.PutAsync(url + "/v1/keys/" + real.Address, new StringContent(
+            "{\"ecdh\":\"" + real.EcdhPub + "\",\"sig\":\"" + real.SigPub + "\",\"secretHash\":\"" + Convert.ToHexStringLower(SHA256.HashData(thiefSecret)) + "\"}",
+            Encoding.UTF8, "application/json"));
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, put.StatusCode);
+        var list = new HttpRequestMessage(HttpMethod.Get, url + "/v1/mail/" + real.Address);
+        list.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Mailbox", LinkCrypto.B64(thiefSecret));
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, (await http.SendAsync(list)).StatusCode);
+        Assert.Empty(await c.List(real));   // the owner still gets in
+    }
+
     [Fact]
     public async Task TheRelayRefusesSomeoneElsesKeysForAnAddress()
     {
