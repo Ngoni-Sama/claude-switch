@@ -226,7 +226,8 @@ public class DashboardView : Border
             if (m.Kind == "link")
                 content.Children.Add(Banner(Neu.P.Accent, m.Name + " wants to link with this computer",
                     "Its address is " + LinkCrypto.Format(m.From) + ". Accept if that's your computer; then either one can send the other profiles.",
-                    Btn("Review…", true, () => _ = LinkUi.Accept(Owner, msg, () => Reload(true)))));
+                    Btn("Review…", true, () => _ = LinkUi.Accept(Owner, msg, () => Reload(true))),
+                    Btn("Copy its address", false, () => _ = LinkUi.Copy(Owner, msg.From), 12.5)));
             else
                 content.Children.Add(Banner(Neu.P.Accent, m.Name + " sent you " + Describe(m.Profiles) + (m.Profiles.Count == 1 ? "" : " profiles"),
                     (m.Size / 1024.0 / 1024.0).ToString("0.0") + " MB, sent " + Accounts.Ago(m.Created) + ", end-to-end encrypted. It waits on the relay until " +

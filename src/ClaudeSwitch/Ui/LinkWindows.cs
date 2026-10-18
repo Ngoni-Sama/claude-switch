@@ -26,6 +26,48 @@ public static class LinkUi
         return r;
     }
 
+    // Copies an address the way people paste it (CS-XXXXX-…).
+    public static async Task<bool> Copy(Window owner, string address)
+    {
+        try { await owner.Clipboard.SetTextAsync(LinkCrypto.Format(address)); return true; }
+        catch (Exception ex) { ErrorLog.Write(ex); return false; }
+    }
+
+    // A copy button that says "Copied" for a moment.
+    static NeuButton CopyButton(Window owner, string address, string label = "Copy address")
+    {
+        NeuButton b = null;
+        b = Btn(label, false, async () =>
+        {
+            if (!await Copy(owner, address)) return;
+            b.Text = "Copied";
+            await Task.Delay(1800);
+            b.Text = label;
+        }, 12.5);
+        ToolTip.SetTip(b, LinkCrypto.Format(address));
+        return b;
+    }
+
+    // An address you can click to copy.
+    static Control AddressText(Window owner, string address, double size)
+    {
+        var t = Neu.T(LinkCrypto.Format(address), size, null, FontWeight.SemiBold, wrap: true);
+        t.FontFamily = new FontFamily("Cascadia Mono, Consolas, Menlo, monospace");
+        var host = new Border { Child = t, Background = Brushes.Transparent, Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand) };
+        ToolTip.SetTip(host, "Click to copy");
+        Avalonia.Automation.AutomationProperties.SetName(host, "Address " + LinkCrypto.Format(address) + ", click to copy");
+        host.PointerPressed += async (_, e) =>
+        {
+            e.Handled = true;
+            if (!await Copy(owner, address)) return;
+            string was = t.Text;
+            t.Text = "Copied to the clipboard";
+            await Task.Delay(1500);
+            t.Text = was;
+        };
+        return host;
+    }
+
     // ---- dashboard tile ------------------------------------------------------------------
 
     public static Control Panel(Snapshot snap, Window owner, Action reload)
@@ -54,14 +96,10 @@ public static class LinkUi
         string address = Demo.On ? Demo.LinkAddress : Link.Address;
         var addr = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
         addr.Children.Add(Neu.T("This computer's address", 12, Neu.P.Muted));
-        var shown = Neu.T(LinkCrypto.Format(address), 13.5, null, FontWeight.SemiBold, wrap: true);
-        shown.FontFamily = new FontFamily("Cascadia Mono, Consolas, Menlo, monospace");
+        Control shown = AddressText(owner, address, 13.5);
         shown.Margin = new Thickness(0, 2, 0, 0);
         addr.Children.Add(shown);
-        var copy = Btn("Copy address", false, async () =>
-        {
-            try { await owner.Clipboard.SetTextAsync(LinkCrypto.Format(address)); } catch (Exception) { }
-        }, 12.5);
+        NeuButton copy = CopyButton(owner, address);
         var who = Neu.T("Others see it as " + (Demo.On ? "Studio PC" : Link.ComputerName), 12, Neu.P.Muted);
         who.Margin = new Thickness(0, 2, 0, 0);
         addr.Children.Add(who);
@@ -81,9 +119,11 @@ public static class LinkUi
             line.Children.Add(Neu.T(peer.Name, 14, null, FontWeight.SemiBold));
             line.Children.Add(Neu.T((peer.Linked ? "Linked" : "Waiting for it to accept") + "  ·  " + LinkCrypto.Format(peer.Address)[..14] + "…", 12,
                                     peer.Linked ? Neu.P.Good : Neu.P.Warn));
-            var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 6, 0, 0) };
-            if (peer.Linked) actions.Children.Add(Btn("Send profiles…", true, () => _ = Send(owner, snap, peer, reload), 12.5));
-            actions.Children.Add(Btn("Unlink", false, () => _ = Unlink(owner, peer, reload), 12.5));
+            var actions = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+            void Act(Control c) { c.Margin = new Thickness(0, 0, 6, 6); actions.Children.Add(c); }
+            if (peer.Linked) Act(Btn("Send profiles…", true, () => _ = Send(owner, snap, peer, reload), 12.5));
+            Act(CopyButton(owner, peer.Address, "Copy its address"));
+            Act(Btn("Unlink", false, () => _ = Unlink(owner, peer, reload), 12.5));
             line.Children.Add(actions);
             list.Children.Add(line);
         }
@@ -114,9 +154,10 @@ public static class LinkUi
         try
         {
             string address = await Link.TurnOn();
-            await Dialogs.Info(owner, "Linked computers is on",
-                "This computer's address is\n\n" + LinkCrypto.Format(address) + "\n\nTurn it on on your other computer too, then press " +
-                "Link a computer on either one and enter the other's address.");
+            if (await Dialogs.Ask(owner, "Linked computers is on",
+                    "This computer's address is\n\n" + LinkCrypto.Format(address) + "\n\nTurn it on on your other computer too, then press " +
+                    "Link a computer on either one and paste the other's address.", "Copy address", "Done") == 0)
+                await Copy(owner, address);
         }
         catch (LinkException ex) { await Dialogs.Info(owner, "Couldn't turn it on", ex.Message); }
         reload();
@@ -124,8 +165,17 @@ public static class LinkUi
 
     static async Task LinkComputer(Window owner, Action reload)
     {
+        // Already copied the other computer's address? Start with it filled in.
+        string pasted = "";
+        try
+        {
+            string clip = await owner.Clipboard.GetTextAsync();
+            if (LinkCrypto.Normalize(clip) is string a && a != Link.Address) pasted = LinkCrypto.Format(a);
+        }
+        catch (Exception) { }
         string input = await Dialogs.Text(owner, "Link a computer",
-            "Enter the other computer's address. It's on its Linked computers card, like CS-XXXXX-XXXXX-XXXXX-XXXXX-XXXX.", "",
+            (pasted.Length > 0 ? "Filled in from what you copied. " : "") +
+            "Paste the other computer's address. It's on its Linked computers card (Copy address), like CS-XXXXX-XXXXX-XXXXX-XXXXX-XXXX.", pasted,
             t => LinkCrypto.Normalize(t) == null ? "That isn't a complete address (24 letters and numbers after CS-)."
                : LinkCrypto.Normalize(t) == Link.Address ? "That's this computer's own address." : null);
         if (input == null) return;
@@ -135,10 +185,11 @@ public static class LinkUi
         try
         {
             LinkPeer p = await Link.Request(input, name);
-            await Dialogs.Info(owner, "Link request sent",
-                p.Linked ? p.Name + " is linked." :
-                "Accept it on " + p.Name + ". It appears there within a few minutes (or press Check now on it). Make sure the address it shows is this one:\n\n" +
-                LinkCrypto.Format(Link.Address));
+            if (p.Linked) await Dialogs.Info(owner, "Linked", p.Name + " is linked.");
+            else if (await Dialogs.Ask(owner, "Link request sent",
+                         "Accept it on " + p.Name + ". It appears there within a few minutes (or press Check now on it). Make sure the address it shows is this one:\n\n" +
+                         LinkCrypto.Format(Link.Address), "Copy this address", "OK") == 0)
+                await Copy(owner, Link.Address);
         }
         catch (LinkException ex) { await Dialogs.Info(owner, "Couldn't link", ex.Message); }
         reload();
