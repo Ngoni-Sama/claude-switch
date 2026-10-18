@@ -23,7 +23,7 @@ public class Palette
     public string Name;
     public bool IsDark;
     public Color Bg, Hover, Hi, Lo, Well, Line, Text, Muted, Accent, OnAccent, Good, Warn, Bad;
-    public Color Card, Inner, Border, Track, AccentSoft, Accent2, BgTop, BgBottom, Sidebar;
+    public Color Card, Inner, Border, Track, AccentSoft, Accent2, BgTop, BgBottom, Sidebar, SidebarTop, SidebarBottom, NavText;
 }
 
 public static class Neu
@@ -31,21 +31,23 @@ public static class Neu
     public static readonly Palette Light = new()
     {
         Name = "light", IsDark = false,
-        Bg = C(0xF5F5F7), BgTop = C(0xFAFBFD), BgBottom = C(0xEEF0F6), Sidebar = C(0xEDEFF4),
-        Card = C(0xFFFFFF), Inner = C(0xF2F3F7), Border = C(0xE3E4EA), Track = C(0xE3E5EB),
-        Hover = C(0xE6E8EE), Hi = C(0xFFFFFF), Lo = C(0xD8DAE1), Well = C(0xF2F3F7), Line = C(0xE5E6EB),
-        Text = C(0x1D1D1F), Muted = C(0x5E5E65), Accent = C(0x0066CC), Accent2 = C(0x5E5CE6), AccentSoft = C(0xE5EFFB), OnAccent = C(0xFFFFFF),
-        Good = C(0x1D7A35), Warn = C(0x9A5B00), Bad = C(0xC4161C),
+        Bg = C(0xEFEDF6), BgTop = C(0xEFEDF6), BgBottom = C(0xEFEDF6), Sidebar = C(0x4B33A8),
+        SidebarTop = C(0x5A3FC0), SidebarBottom = C(0x2E1F6E), NavText = C(0xFFFFFF),
+        Card = C(0xFFFFFF), Inner = C(0xF4F3F9), Border = C(0xE4E1EF), Track = C(0xE6E3F0),
+        Hover = C(0xEAE7F4), Hi = C(0xFFFFFF), Lo = C(0xD8D4E6), Well = C(0xF4F3F9), Line = C(0xE6E3EE),
+        Text = C(0x1E1B2E), Muted = C(0x5F5A72), Accent = C(0x5240CF), Accent2 = C(0x9A55E8), AccentSoft = C(0xECE8FB), OnAccent = C(0xFFFFFF),
+        Good = C(0x1D7A45), Warn = C(0x9A5B00), Bad = C(0xC4161C),
     };
 
     public static readonly Palette Dark = new()
     {
         Name = "dark", IsDark = true,
-        Bg = C(0x1C1C1E), BgTop = C(0x202024), BgBottom = C(0x141416), Sidebar = C(0x232327),
-        Card = C(0x2C2C2E), Inner = C(0x38383C), Border = C(0x3A3A3E), Track = C(0x48484C),
-        Hover = C(0x3A3A3E), Hi = C(0x3A3A3E), Lo = C(0x0E0E10), Well = C(0x38383C), Line = C(0x3A3A3E),
-        Text = C(0xF5F5F7), Muted = C(0xA1A1A8), Accent = C(0x2E9BFF), Accent2 = C(0x7D7AFF), AccentSoft = C(0x1B3550), OnAccent = C(0xFFFFFF),
-        Good = C(0x32D74B), Warn = C(0xFFB340), Bad = C(0xFF6961),
+        Bg = C(0x17151F), BgTop = C(0x17151F), BgBottom = C(0x17151F), Sidebar = C(0x241B47),
+        SidebarTop = C(0x2C2157), SidebarBottom = C(0x120D26), NavText = C(0xF2EFFF),
+        Card = C(0x221F2D), Inner = C(0x2D2A3A), Border = C(0x363246), Track = C(0x443F57),
+        Hover = C(0x2F2B3D), Hi = C(0x2D2A3A), Lo = C(0x0D0C12), Well = C(0x2D2A3A), Line = C(0x363246),
+        Text = C(0xF3F1FA), Muted = C(0xA7A2B8), Accent = C(0x8F80FF), Accent2 = C(0xC48BFF), AccentSoft = C(0x2E2752), OnAccent = C(0xFFFFFF),
+        Good = C(0x4ADE80), Warn = C(0xFFB340), Bad = C(0xFF6B6B),
     };
 
     public static Palette P { get; private set; } = Light;
@@ -85,8 +87,12 @@ public static class Neu
     public static BoxShadows CardShadow => P.IsDark ? default : BoxShadows.Parse("0 1 2 0 #0D000000, 0 8 24 0 #12000000");
 
     // The window and the sidebar: very gentle vertical gradients.
-    public static IBrush PageBrush => Gradient(P.BgTop, P.BgBottom, vertical: true);
-    public static IBrush SidebarBrush => Gradient(P.Sidebar, Mix(P.Sidebar, P.BgBottom, 0.6), vertical: true);
+    // Solid, so the sidebar's open pill blends into the page exactly.
+    public static IBrush PageBrush => B(P.Bg);
+    public static IBrush SidebarBrush => Gradient(P.SidebarTop, P.SidebarBottom, vertical: true);
+
+    // Small screens and windows that aren't maximised get tighter spacing.
+    public static bool Dense { get; set; }
     public static IBrush AccentBrush => Gradient(P.Accent, P.Accent2);
 
     public static IBrush Gradient(Color a, Color b, bool vertical = false) => new LinearGradientBrush
@@ -107,7 +113,8 @@ public static class Neu
         BoxShadow = CardShadow, Padding = padding ?? new Thickness(22, 20), Child = child,
     };
 
-    public static Border Tile(Control child, Thickness? padding = null) => Raised(child, 16, 0, padding ?? new Thickness(22, 20, 22, 16));
+    public static Border Tile(Control child, Thickness? padding = null) =>
+        Raised(child, 16, 0, padding ?? (Dense ? new Thickness(16, 14, 16, 12) : new Thickness(22, 20, 22, 16)));
 
     // The darker panel nested in a tile.
     public static Border Inset(Control child, double radius = 18, Thickness? padding = null) => new()
@@ -138,7 +145,7 @@ public static class Neu
     public static Control Stat(string number, string unit, Color? color = null)
     {
         var s = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        s.Children.Add(new TextBlock { Text = number, FontSize = 28, Foreground = B(color ?? P.Text), VerticalAlignment = VerticalAlignment.Bottom });
+        s.Children.Add(new TextBlock { Text = number, FontSize = Dense ? 24 : 28, Foreground = B(color ?? P.Text), VerticalAlignment = VerticalAlignment.Bottom });
         s.Children.Add(new TextBlock { Text = unit, FontSize = 13.5, Foreground = B(P.Text), VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 5) });
         AutomationProperties.SetName(s, number + " " + unit);
         return s;
@@ -248,7 +255,7 @@ public class NeuButton : Border
             Background = down ? Neu.Gradient(Neu.Mix(Neu.P.Accent, Neu.P.Text, 0.2), Neu.Mix(Neu.P.Accent2, Neu.P.Text, 0.2))
                        : IsPointerOver ? Neu.Gradient(Neu.Mix(Neu.P.Accent, Neu.P.Text, 0.08), Neu.Mix(Neu.P.Accent2, Neu.P.Text, 0.08))
                        : Neu.AccentBrush;
-            BoxShadow = Neu.P.IsDark ? default : BoxShadows.Parse("0 2 8 0 #330066CC");
+            BoxShadow = Neu.P.IsDark ? default : BoxShadows.Parse("0 2 8 0 #335240CF");
         }
         else
         {

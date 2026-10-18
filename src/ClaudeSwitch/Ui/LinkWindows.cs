@@ -237,9 +237,10 @@ public static class LinkUi
         readonly TextBlock title = Neu.T("", 14.5, null, FontWeight.SemiBold);
         double fraction;
 
-        public ProgressView()
+        public ProgressView(bool compact = false)
         {
-            Spacing = 8;
+            Spacing = compact ? 5 : 8;
+            if (compact) { title.FontSize = 12.5; track.Height = 7; text.FontSize = 12; }
             fill.Background = Neu.AccentBrush;
             track.Children.Add(new Border { Background = Neu.B(Neu.P.Inner), CornerRadius = new CornerRadius(5) });
             track.Children.Add(fill);
@@ -264,6 +265,12 @@ public static class LinkUi
             Avalonia.Automation.AutomationProperties.SetName(this, title.Text + ". " + text.Text);
         }
 
+        public void Full()
+        {
+            fraction = 1;
+            fill.Width = track.Bounds.Width;
+        }
+
         public void Message(string heading, string detail, Color? color = null)
         {
             title.Text = heading;
@@ -274,6 +281,114 @@ public static class LinkUi
         static string Mb(long b) => (b / 1024.0 / 1024.0).ToString(b < 10 * 1024 * 1024 ? "0.0" : "0") + " MB";
     }
 
+    // ---- transfers list -----------------------------------------------------------
+
+    // Everything coming and going, with its #ID and live progress.
+    public static Control Transfers(Window owner, Action reload)
+    {
+        var incoming = (Demo.On ? Demo.LinkInbox : Link.Inbox).Where(m => m.Kind == "transfer").ToList();
+        var outgoing = Demo.On ? new List<Outgoing>() : Link.Outgoings();
+        var s = new StackPanel { Spacing = 14 };
+        var head = new DockPanel();
+        var count = Neu.T(incoming.Count + outgoing.Count == 0 ? "None yet" : (incoming.Count + outgoing.Count) + " in the last week", 12.5, Neu.P.Muted);
+        count.VerticalAlignment = VerticalAlignment.Center;
+        DockPanel.SetDock(count, Dock.Right);
+        head.Children.Add(count);
+        head.Children.Add(Neu.Heading("Transfers", 15));
+        s.Children.Add(head);
+        if (incoming.Count + outgoing.Count == 0)
+            s.Children.Add(Neu.Para("Transfers you send or receive show here with their #ID, live speed and time left. Interrupted ones resume where they stopped.", 13));
+
+        foreach (LinkMessage m in incoming)
+        {
+            LinkMessage msg = m;
+            var row = Row(m.ShortId, "From " + m.Name + "  ·  " + string.Join(", ", m.Profiles), out StackPanel actions, out ProgressView bar);
+            if (Link.IsActive(m.Id) || Link.LiveProgress(m.Id) is not null) Track(bar, m.Id);
+            else if (!m.Complete)
+            {
+                double frac = m.Parts > 0 ? (double)m.Received / m.Parts : 0;
+                bar.Set(new LinkProgress("Uploading from " + m.Name + "…", (long)(frac * m.Size), m.Size, m.UploadRate,
+                    m.UploadRate > 0 ? TimeSpan.FromSeconds((m.Size - frac * m.Size) / m.UploadRate) : null));
+            }
+            else bar.Message("Ready to receive", Mb(m.Size) + "  ·  sent " + Accounts.Ago(m.Created) + "  ·  waits until " + m.Expires.ToString("ddd d MMM"));
+            if (m.Complete && !Link.IsActive(m.Id)) actions.Children.Add(Btn("Receive", true, () => _ = Receive(owner, msg, reload), 12.5));
+            if (!Link.IsActive(m.Id)) actions.Children.Add(Btn("Decline", false, async () => { try { await Link.Decline(msg); } catch (LinkException) { } reload(); }, 12.5));
+            s.Children.Add(row);
+        }
+
+        foreach (Outgoing o in outgoing)
+        {
+            Outgoing rec = o;
+            var row = Row(o.ShortId, "To " + o.ToName + "  ·  " + string.Join(", ", o.Profiles), out StackPanel actions, out ProgressView bar);
+            switch (o.State)
+            {
+                case "uploading":
+                    if (Link.IsActive(o.Id)) Track(bar, o.Id);
+                    else
+                    {
+                        bar.Set(Link.LiveProgress(o.Id) ?? new LinkProgress("Paused", 0, o.Size));
+                        bar.Message("Paused", (o.Error ?? "Waiting to resume.") + " It carries on from where it stopped.", Neu.P.Warn);
+                        actions.Children.Add(Btn("Resume", true, async () =>
+                        {
+                            try { await Link.ResumeOutgoing(); } catch (Exception ex) { await Dialogs.Info(owner, "Couldn't resume", ex.Message); }
+                            reload();
+                        }, 12.5));
+                    }
+                    actions.Children.Add(Btn("Cancel", false, async () => { await Link.CancelOutgoing(rec); reload(); }, 12.5));
+                    break;
+                case "waiting":
+                    bar.Message("Waiting for " + o.ToName + " to collect it", Mb(o.Size) + "  ·  sent " + Accounts.Ago(o.Finished == DateTime.MinValue ? o.Created : o.Finished));
+                    bar.Full();
+                    actions.Children.Add(Btn("Cancel", false, async () => { await Link.CancelOutgoing(rec); reload(); }, 12.5));
+                    break;
+                default:
+                    bar.Message(o.State == "collected" ? "Collected by " + o.ToName : o.State == "expired" ? "Expired before it was collected" : "Failed",
+                                Mb(o.Size) + (o.Error != null ? "  ·  " + o.Error : ""), o.State == "collected" ? Neu.P.Good : Neu.P.Muted);
+                    if (o.State == "collected") bar.Full();
+                    actions.Children.Add(Btn("Clear", false, () => { Link.ClearOutgoing(rec); reload(); }, 12.5));
+                    break;
+            }
+            s.Children.Add(row);
+        }
+        return Neu.Tile(s);
+    }
+
+    static Control Row(string id, string what, out StackPanel actions, out ProgressView bar)
+    {
+        var row = new StackPanel { Spacing = 6 };
+        var top = new DockPanel();
+        actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        DockPanel.SetDock(actions, Dock.Right);
+        top.Children.Add(actions);
+        var idPill = new Border
+        {
+            Background = Neu.B(Neu.P.AccentSoft), CornerRadius = new CornerRadius(6), Padding = new Thickness(7, 2), Margin = new Thickness(0, 0, 8, 0),
+            Child = Neu.T(id, 12, Neu.P.Accent, FontWeight.SemiBold), VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(idPill, "Transfer ID, the same on both computers");
+        DockPanel.SetDock(idPill, Dock.Left);
+        top.Children.Add(idPill);
+        var label = Neu.T(what, 13.5, null, FontWeight.SemiBold);
+        label.VerticalAlignment = VerticalAlignment.Center;
+        top.Children.Add(label);
+        row.Children.Add(top);
+        bar = new ProgressView(compact: true);
+        row.Children.Add(bar);
+        return Neu.Inset(row, 12, new Thickness(14, 10));
+    }
+
+    // Live updates for one transfer while this view is on screen.
+    static void Track(ProgressView bar, string id)
+    {
+        if (Link.LiveProgress(id) is LinkProgress now) bar.Set(now);
+        Action<string, LinkProgress> on = (tid, p) => { if (tid == id) Dispatcher.UIThread.Post(() => bar.Set(p)); };
+        bar.AttachedToVisualTree += (_, _) => { Link.Progress -= on; Link.Progress += on; };
+        bar.DetachedFromVisualTree += (_, _) => Link.Progress -= on;
+        Link.Progress += on;
+    }
+
+    static string Mb(long b) => (b / 1024.0 / 1024.0).ToString(b < 10 * 1024 * 1024 ? "0.0" : "0") + " MB";
+
     // ---- sending ---------------------------------------------------------------------
 
     // Everything selected by default: one click on Send. Progress shows in place.
@@ -281,11 +396,13 @@ public static class LinkUi
     {
         Window w = Dialogs.Frame("Send to " + peer.Name, 600);
         var tcs = new TaskCompletionSource();
-        var cts = new CancellationTokenSource();
-        w.Closed += (_, _) => { cts.Cancel(); tcs.TrySetResult(); };
+        // Closing the window doesn't stop the upload: it carries on in the
+        // background (see Transfers on the Linked computers page).
+        w.Closed += (_, _) => tcs.TrySetResult();
 
         var body = new StackPanel();
-        body.Children.Add(Neu.Para("Encrypted for " + peer.Name + " only. It waits there for up to a week, so that computer doesn't need to be on.", 13.5));
+        body.Children.Add(Neu.Para("Encrypted for " + peer.Name + " only. It waits there for up to a week, so that computer doesn't need to be on. " +
+                                   "If the connection drops it resumes where it stopped, and sending the same profiles again replaces the copy still waiting.", 13.5));
         var options = new StackPanel();
         options.Children.Add(Neu.Section("Profiles"));
         var checks = new List<(ProfileEntry, CheckBox)>();
@@ -332,26 +449,31 @@ public static class LinkUi
             options.IsEnabled = false;
             options.Opacity = 0.5;
             send.IsEnabled = false;
+            cancel.Text = "Hide (keeps sending)";
             progress.IsVisible = true;
             try
             {
-                long size = await Link.SendProfiles(peer, o, pr => Dispatcher.UIThread.Post(() => progress.Set(pr)), cts.Token);
-                progress.Message("Sent to " + peer.Name, (size / 1024.0 / 1024.0).ToString("0.0") + " MB is waiting there. It appears within a few minutes, and is deleted from the relay once it's collected.", Neu.P.Good);
+                Outgoing sent = await Link.SendProfiles(peer, o, pr => Dispatcher.UIThread.Post(() => progress.Set(pr)));
+                progress.Message("Sent " + sent.ShortId + " to " + peer.Name, (sent.Size / 1024.0 / 1024.0).ToString("0.0") +
+                    " MB is waiting there. It appears within a few minutes, and is deleted from the relay once it's collected.", Neu.P.Good);
                 done = true;
                 send.Text = "Done";
                 send.IsEnabled = true;
                 cancel.IsVisible = false;
+                reload();
             }
             catch (OperationCanceledException) { }
             catch (Exception ex)
             {
                 if (ex is not LinkException) ErrorLog.Write(ex);
                 progress.IsVisible = false;
-                status.Text = "Couldn't send: " + ex.Message;
+                status.Text = "Paused: " + ex.Message + " Press Resume to carry on from where it stopped.";
                 options.IsEnabled = true;
                 options.Opacity = 1;
                 send.IsEnabled = true;
-                send.Text = "Try again";
+                send.Text = "Resume";
+                cancel.Text = "Close";
+                reload();
             }
         };
 

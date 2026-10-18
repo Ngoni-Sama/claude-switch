@@ -74,10 +74,29 @@ public static class Shell
                        m.Kind == "link" ? "Open Claude Switch to accept or decline." : string.Join(", ", m.Profiles) + ". Open Claude Switch to receive them.");
             dashboard?.Reload(true);
         });
-        var linkTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(3) };
-        linkTimer.Tick += async (_, _) => { if (Link.On) await Link.Refresh(); };
+        // Every 5 seconds while something is moving (uploads in either direction,
+        // a transfer waiting to be collected), otherwise every 3 minutes.
+        DateTime lastCheck = DateTime.MinValue;
+        bool checking = false;
+        var linkTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        linkTimer.Tick += async (_, _) =>
+        {
+            if (!Link.On || checking) return;
+            if (!Link.Busy && DateTime.Now - lastCheck < TimeSpan.FromMinutes(3)) return;
+            checking = true;
+            lastCheck = DateTime.Now;
+            try { await Link.Refresh(); await Link.CheckOutgoing(); }
+            catch (Exception ex) { ErrorLog.Write(ex); }
+            finally { checking = false; }
+        };
         linkTimer.Start();
-        Dispatcher.UIThread.Post(async () => { if (Link.On) await Link.Refresh(); }, DispatcherPriority.Background);
+        // Resume uploads an earlier run left half done.
+        Dispatcher.UIThread.Post(async () =>
+        {
+            if (!Link.On) return;
+            await Link.Refresh();
+            _ = Task.Run(Link.ResumeOutgoing);
+        }, DispatcherPriority.Background);
         Dispatcher.UIThread.Post(CheckLimits, DispatcherPriority.ApplicationIdle);
 
         if (!args.Contains("--tray") || Profiles.LoadOrEmpty().Count == 0) ShowMain();

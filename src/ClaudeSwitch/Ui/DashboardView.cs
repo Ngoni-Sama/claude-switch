@@ -23,8 +23,10 @@ public class DashboardView : Border
     Snapshot snap;
     string selected;
     string page = "overview";
-    readonly Border sidebar;
-    readonly StackPanel nav;
+    readonly Border sidebar, headerBar;
+    readonly StackPanel nav, headTools;
+    readonly TextBlock headTitle;
+    bool collapsed;    // sidebar shows icons only
     int sessionPage;
     bool loading;
 
@@ -34,15 +36,29 @@ public class DashboardView : Border
     public DashboardView()
     {
         Background = Neu.PageBrush;
-        content = new StackPanel { Margin = new Thickness(36, 28, 36, 36), Spacing = 18, MaxWidth = 1240, HorizontalAlignment = HorizontalAlignment.Stretch };
+        content = new StackPanel { MaxWidth = 1240, HorizontalAlignment = HorizontalAlignment.Stretch };
         scroller = new ScrollViewer { Content = content, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
         nav = new StackPanel { Spacing = 2 };
-        sidebar = new Border { Width = 232, Child = nav, Padding = new Thickness(14, 18, 14, 14) };
+        sidebar = new Border { Child = nav, ClipToBounds = false };
+        headTitle = new TextBlock { FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+        headTools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        var headGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        headGrid.Children.Add(headTitle);
+        Grid.SetColumn(headTools, 1);
+        headGrid.Children.Add(headTools);
+        headerBar = new Border { Child = headGrid };
+        var main = new DockPanel();
+        DockPanel.SetDock(headerBar, Dock.Top);
+        main.Children.Add(headerBar);
+        main.Children.Add(scroller);
         var layout = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
-        layout.Children.Add(sidebar);
-        Grid.SetColumn(scroller, 1);
-        layout.Children.Add(scroller);
+        Grid.SetColumn(main, 1);
+        layout.Children.Add(main);
+        layout.Children.Add(sidebar);   // last, so the open pill's curves draw over the page edge
         Child = layout;
+        ApplyDensity();
+        // Laptops and windows that aren't maximised: tighter spacing, then an icon-only sidebar.
+        SizeChanged += (_, _) => { if (ApplyDensity() && snap != null) Build(); };
         content.Children.Add(Neu.T("Loading…", 14, Neu.P.Muted));
         timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
         timer.Tick += (_, _) => Reload(false);
@@ -51,6 +67,25 @@ public class DashboardView : Border
     }
 
     Window Owner => TopLevel.GetTopLevel(this) as Window;
+
+    // True when the layout mode changed and the page needs rebuilding.
+    bool ApplyDensity()
+    {
+        double w = Bounds.Width, h = Bounds.Height;
+        bool dense = w > 0 && (w < 1180 || h < 780);
+        bool narrow = w > 0 && w < 900;
+        bool changed = dense != Neu.Dense || narrow != collapsed;
+        Neu.Dense = dense;
+        collapsed = narrow;
+        content.Margin = dense ? new Thickness(20, 16, 20, 22) : new Thickness(32, 24, 32, 32);
+        content.Spacing = dense ? 12 : 18;
+        sidebar.Width = collapsed ? 72 : dense ? 222 : 240;
+        sidebar.Padding = collapsed ? new Thickness(12, 16, 0, 12) : new Thickness(14, dense ? 14 : 20, 0, 14);
+        headerBar.Height = dense ? 52 : 64;
+        headerBar.Padding = new Thickness(dense ? 20 : 32, 0, dense ? 16 : 28, 0);
+        headTitle.FontSize = dense ? 18 : 21;
+        return changed;
+    }
 
     public void Reload(bool force)
     {
@@ -124,7 +159,10 @@ public class DashboardView : Border
         Vector offset = scroller.Offset;
         content.Children.Clear();
         bool onboarding = snap.Profiles.Count == 0;
-        sidebar.IsVisible = !onboarding;
+        sidebar.IsVisible = headerBar.IsVisible = !onboarding;
+        headerBar.Background = Neu.B(Neu.P.Card);
+        headerBar.BoxShadow = Neu.P.IsDark ? default : BoxShadows.Parse("0 1 0 0 #14000000");
+        headTools.Children.Clear();
         if (onboarding) { content.Children.Add(new OnboardingView(() => Reload(true))); return; }
         BuildNav();
 
@@ -136,8 +174,11 @@ public class DashboardView : Border
                 break;
             case "linked":
                 PageHeader("Linked computers", "Send profiles to your other computers over the internet, wherever they are. End-to-end encrypted; sign-ins never travel.");
-                BuildLinkBanners();
-                content.Children.Add(LinkUi.Panel(snap, Owner, () => Reload(true)));
+                BuildLinkBanners(transfers: false);   // the Transfers card below lists those
+                var linkGrid = new Masonry { MinColumnWidth = 400, MaxColumns = 2 };
+                linkGrid.Children.Add(LinkUi.Transfers(Owner, () => Reload(true)));
+                linkGrid.Children.Add(LinkUi.Panel(snap, Owner, () => Reload(true)));
+                content.Children.Add(linkGrid);
                 break;
             case "memory":
                 PageHeader("Shared memory", "Let accounts share one memory and one set of conversations, so one can carry on where another ran out.");
@@ -200,19 +241,27 @@ public class DashboardView : Border
         ("support", "Support", "M8,13.5 l-5.2,-5.2 a3,3 0 0 1 5.2,-4 a3,3 0 0 1 5.2,4 z"),
     };
 
+    static Color White(byte alpha) => Color.FromArgb(alpha, 255, 255, 255);
+
     void BuildNav()
     {
         sidebar.Background = Neu.SidebarBrush;
-        sidebar.BorderBrush = Neu.B(Neu.P.Border);
-        sidebar.BorderThickness = new Thickness(0, 0, 1, 0);
         nav.Children.Clear();
 
-        var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(6, 0, 0, 18) };
-        brand.Children.Add(new Image { Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://ClaudeSwitch/Assets/icon.png"))), Width = 30, Height = 30 });
-        var names = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        names.Children.Add(Neu.T("Claude Switch", 15, null, FontWeight.SemiBold));
-        names.Children.Add(Neu.T(snap.Profiles.Count + (snap.Profiles.Count == 1 ? " profile" : " profiles"), 11.5, Neu.P.Muted));
-        brand.Children.Add(names);
+        var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(collapsed ? 6 : 6, 0, 14, Neu.Dense ? 14 : 22) };
+        double logo = collapsed ? 34 : 30;
+        brand.Children.Add(new Border
+        {
+            Background = Neu.B(White(0xF2)), CornerRadius = new CornerRadius(10), Padding = new Thickness(3), Width = logo + 6, Height = logo + 6,
+            Child = new Image { Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://ClaudeSwitch/Assets/icon.png"))) },
+        });
+        if (!collapsed)
+        {
+            var names = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            names.Children.Add(Neu.T("Claude Switch", 15, Neu.P.NavText, FontWeight.SemiBold));
+            names.Children.Add(Neu.T(snap.Profiles.Count + (snap.Profiles.Count == 1 ? " profile" : " profiles"), 11.5, White(0xB8)));
+            brand.Children.Add(names);
+        }
         nav.Children.Add(brand);
 
         int inbox = (Demo.On ? Demo.LinkInbox : Link.Inbox).Count;
@@ -228,106 +277,162 @@ public class DashboardView : Border
             nav.Children.Add(NavItem(key, label, glyph, badge));
         }
 
-        var themes = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(4, 22, 0, 8) };
-        foreach (string theme in new[] { "Light", "Dark" })
-        {
-            string n = theme.ToLowerInvariant();
-            var t = new NeuButton(theme, false, 12) { Selected = Neu.P.Name == n, MinWidth = 72 };
-            AutomationProperties.SetName(t, theme + " theme");
-            t.Click += () => { if (Neu.P.Name != n) Neu.Switch(n); };
-            themes.Children.Add(t);
-        }
-        nav.Children.Add(themes);
-        var ver = Neu.Para("Version " + typeof(DashboardView).Assembly.GetName().Version.ToString(3) + " · by Ngoni Maphosa. Unofficial; not affiliated with Anthropic.", 11);
-        ver.Margin = new Thickness(6, 4, 4, 0);
+        if (collapsed) return;
+        var ver = Neu.T("Version " + typeof(DashboardView).Assembly.GetName().Version.ToString(3) + " · by Ngoni Maphosa. Unofficial; not affiliated with Anthropic.", 11, White(0x9C), wrap: true);
+        ver.Margin = new Thickness(8, 22, 18, 0);
         nav.Children.Add(ver);
     }
 
+    // The current page is an open pill: it runs to the sidebar's edge in the page's own
+    // colour, with curves above and below so it flows into the page.
     Control NavItem(string key, string label, string glyph, string badge)
     {
         bool on = page == key;
-        Color fg = on ? Neu.P.OnAccent : Neu.P.Text;
+        Color fg = on ? Neu.P.Accent : Neu.P.NavText;
         var icon = new Avalonia.Controls.Shapes.Path
         {
-            Data = Geometry.Parse(glyph), Stroke = Neu.B(on ? Neu.P.OnAccent : Neu.P.Muted), StrokeThickness = 1.4,
+            Data = Geometry.Parse(glyph), Stroke = Neu.B(on ? Neu.P.Accent : White(0xD8)), StrokeThickness = on ? 1.7 : 1.4,
             StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round, Width = 16, Height = 16, Stretch = Stretch.None,
-            VerticalAlignment = VerticalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Left,
         };
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions(collapsed ? "*" : "Auto,*,Auto") };
         row.Children.Add(icon);
-        var text = Neu.T(label, 13.5, fg, on ? FontWeight.SemiBold : FontWeight.Normal);
-        text.Margin = new Thickness(11, 0, 0, 0);
-        text.VerticalAlignment = VerticalAlignment.Center;
-        Grid.SetColumn(text, 1);
-        row.Children.Add(text);
+        if (!collapsed)
+        {
+            var text = Neu.T(label, Neu.Dense ? 13 : 13.5, fg, on ? FontWeight.SemiBold : FontWeight.Normal);
+            text.Margin = new Thickness(12, 0, 0, 0);
+            text.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+        }
+        else ToolTip.SetTip(row, label);
         if (badge != null)
         {
             var pill = new Border
             {
-                Background = on ? Neu.B(Color.FromArgb(0x40, 255, 255, 255)) : Neu.AccentBrush, CornerRadius = new CornerRadius(9),
-                Padding = new Thickness(7, 1), MinWidth = 20, VerticalAlignment = VerticalAlignment.Center,
-                Child = Neu.T(badge, 11, Neu.P.OnAccent, FontWeight.SemiBold),
+                Background = Neu.B(on ? Neu.P.Accent : Color.FromRgb(0xFF, 0x5C, 0x8A)), CornerRadius = new CornerRadius(9),
+                Padding = new Thickness(collapsed ? 4 : 7, 1), MinWidth = collapsed ? 14 : 20, VerticalAlignment = VerticalAlignment.Center,
+                Child = Neu.T(badge, collapsed ? 9.5 : 11, Colors.White, FontWeight.SemiBold),
             };
             ((TextBlock)pill.Child).HorizontalAlignment = HorizontalAlignment.Center;
-            Grid.SetColumn(pill, 2);
+            if (collapsed)
+            {
+                pill.HorizontalAlignment = HorizontalAlignment.Right;
+                pill.VerticalAlignment = VerticalAlignment.Top;
+                pill.Margin = new Thickness(0, -6, 2, 0);
+            }
+            else Grid.SetColumn(pill, 2);
             row.Children.Add(pill);
         }
+        double padY = Neu.Dense ? 9 : 11;
         var item = new Border
         {
-            Child = row, Padding = new Thickness(11, 8), CornerRadius = new CornerRadius(10), Focusable = true,
-            Background = on ? Neu.AccentBrush : Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand),
-            BoxShadow = on && !Neu.P.IsDark ? BoxShadows.Parse("0 2 8 0 #330066CC") : default,
+            Child = row, Padding = new Thickness(collapsed ? 0 : 14, padY, collapsed ? 12 : 16, padY), Focusable = true,
+            CornerRadius = on ? new CornerRadius(22, 0, 0, 22) : new CornerRadius(12),
+            Margin = on ? default : new Thickness(0, 0, collapsed ? 12 : 14, 0),
+            Background = on ? Neu.B(Neu.P.Bg) : Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand),
         };
         AutomationProperties.SetName(item, label + (on ? ", current page" : "") + (badge != null ? ", " + badge + " new" : ""));
         if (!on)
         {
-            item.PointerEntered += (_, _) => item.Background = Neu.B(Neu.P.Hover);
+            item.PointerEntered += (_, _) => item.Background = Neu.B(White(0x1F));
             item.PointerExited += (_, _) => item.Background = Brushes.Transparent;
         }
         item.PointerPressed += (_, e) => { e.Handled = true; Show(key); };
         item.KeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space) { e.Handled = true; Show(key); } };
-        return item;
+        if (!on) return item;
+
+        // Concave corners in the page colour, just outside the pill's top and bottom right.
+        const double r = 20;
+        IBrush pageBg = Neu.B(Neu.P.Bg);
+        var above = new Avalonia.Controls.Shapes.Path
+        {
+            Data = Geometry.Parse("M20,0 L20,20 L0,20 A20,20 0 0 0 20,0 Z"), Fill = pageBg, Width = r, Height = r,
+            HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = false,
+        };
+        var below = new Avalonia.Controls.Shapes.Path
+        {
+            Data = Geometry.Parse("M20,0 L0,0 A20,20 0 0 1 20,20 Z"), Fill = pageBg, Width = r, Height = r,
+            HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = false,
+        };
+        var open = new Grid { RowDefinitions = new RowDefinitions("20,Auto,20"), Margin = new Thickness(0, -r, 0, -r), ZIndex = 1 };
+        open.Children.Add(above);
+        Grid.SetRow(item, 1);
+        open.Children.Add(item);
+        Grid.SetRow(below, 2);
+        open.Children.Add(below);
+        return open;
     }
 
+    // Page title and its buttons go in the white bar along the top; the description
+    // stays on the page.
     void PageHeader(string title, string subtitle, params Control[] tools)
     {
-        var head = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
-        if (tools.Length > 0)
+        headTitle.Text = title;
+        headTitle.Foreground = Neu.B(Neu.P.Text);
+        foreach (Control t in tools) headTools.Children.Add(t);
+
+        var themes = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(tools.Length > 0 ? 8 : 0, 0, 0, 0) };
+        foreach (string theme in new[] { "Light", "Dark" })
         {
-            var bar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Top };
-            foreach (Control t in tools) bar.Children.Add(t);
-            DockPanel.SetDock(bar, Dock.Right);
-            head.Children.Add(bar);
+            string n = theme.ToLowerInvariant();
+            var t = new NeuButton(theme, false, 12) { Selected = Neu.P.Name == n, MinWidth = Neu.Dense ? 56 : 66 };
+            AutomationProperties.SetName(t, theme + " theme");
+            t.Click += () => { if (Neu.P.Name != n) Neu.Switch(n); };
+            themes.Children.Add(t);
         }
-        var titles = new StackPanel();
-        var t1 = Neu.T(title, 30, null, FontWeight.Bold);
-        t1.LetterSpacing = -0.6;
-        titles.Children.Add(t1);
-        if (subtitle != null)
-        {
-            var sub = Neu.Para(subtitle, 14);
-            sub.Margin = new Thickness(0, 4, 24, 0);
-            titles.Children.Add(sub);
-        }
-        head.Children.Add(titles);
-        content.Children.Add(head);
+        headTools.Children.Add(themes);
+
+        if (subtitle == null) return;
+        var sub = Neu.Para(subtitle, Neu.Dense ? 13 : 14);
+        sub.Margin = new Thickness(2, 0, 24, Neu.Dense ? 0 : 2);
+        content.Children.Add(sub);
     }
 
     static string InstallHint() => Platform.IsLinux
         ? "Claude Switch opens Claude Desktop with a separate folder per profile. On Ubuntu/Debian install it with: sudo apt install claude-desktop (after adding Anthropic's apt repository)."
         : "Claude Switch opens Claude Desktop with a separate folder per profile. Install Claude from claude.ai/download, then come back.";
 
-    // pc_info-style strip of big numbers: profiles, room left, sessions, Claude.
+    static readonly (Color tint, string glyph)[] StatIcons =
+    {
+        (Color.FromRgb(0xFF, 0x6B, 0x9A), "M8,7 a2.6,2.6 0 1 0 0.01,0 M3,14 a5,4 0 0 1 10,0"),   // pink: profiles
+        (Color.FromRgb(0x8B, 0x5C, 0xF6), "M2,10 a6,6 0 0 1 12,0 M8,10 l2.5,-3"),             // violet: room left
+        (Color.FromRgb(0xF5, 0xB0, 0x0B), "M2,3 h12 v8 h-6 l-3,3 v-3 h-3 z"),                  // amber: sessions
+        (Color.FromRgb(0x22, 0xC5, 0x5E), "M3,8.5 l3,3 l7,-7"),                                // green: Claude
+    };
+
+    // Strip of big numbers: profiles, room left, sessions, Claude.
     void BuildSummary()
     {
-        var strip = new Masonry { Rows = true, MinColumnWidth = 210, MaxColumns = 4 };
+        var strip = new Masonry { Rows = true, MinColumnWidth = Neu.Dense ? 168 : 210, MaxColumns = 4 };
+        int n = 0;
         Control Tile(string label, Control stat, string note, Color? noteColor = null)
         {
-            var s = new StackPanel { Spacing = 4 };
-            s.Children.Add(Neu.T(label.ToUpperInvariant(), 12, Neu.P.Muted, FontWeight.SemiBold));
+            // Coloured icon square beside each number.
+            var (tint, glyph) = StatIcons[n++ % StatIcons.Length];
+            double box = Neu.Dense ? 40 : 48;
+            var icon = new Border
+            {
+                Width = box, Height = box, CornerRadius = new CornerRadius(12), VerticalAlignment = VerticalAlignment.Top,
+                Background = Neu.Gradient(tint, Neu.Mix(tint, Colors.Black, 0.12)),
+                BoxShadow = Neu.P.IsDark ? default : BoxShadows.Parse("0 4 10 0 #26000000"),
+                Child = new Avalonia.Controls.Shapes.Path
+                {
+                    Data = Geometry.Parse(glyph), Stroke = Brushes.White, StrokeThickness = 1.6, Width = 16, Height = 16,
+                    StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round, Stretch = Stretch.None,
+                    HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                    RenderTransform = new ScaleTransform(Neu.Dense ? 1.15 : 1.35, Neu.Dense ? 1.15 : 1.35),
+                },
+            };
+            var s = new StackPanel { Spacing = 3, Margin = new Thickness(14, 0, 0, 0) };
+            s.Children.Add(Neu.T(label, 12.5, Neu.P.Muted, FontWeight.SemiBold));
             s.Children.Add(stat);
-            if (note != null) s.Children.Add(Neu.T(note, 12.5, noteColor ?? Neu.P.Muted));
-            return Neu.Tile(s, new Thickness(18, 14, 18, 14));
+            if (note != null) s.Children.Add(Neu.T(note, 12, noteColor ?? Neu.P.Muted, wrap: true));
+            var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+            g.Children.Add(icon);
+            Grid.SetColumn(s, 1);
+            g.Children.Add(s);
+            return Neu.Tile(g, Neu.Dense ? new Thickness(14, 12, 14, 12) : new Thickness(18, 16, 18, 16));
         }
 
         int open = snap.Profiles.Count(p => snap.Pid(p) != 0);
@@ -380,16 +485,51 @@ public class DashboardView : Border
 
     void BuildBanners()
     {
+        BuildAccountBanners();
         BuildLinkBanners();
         BuildOtherBanners();
     }
 
-    void BuildLinkBanners()
+    // Profiles with no account, and two profiles on one account: each needs its own.
+    void BuildAccountBanners()
+    {
+        foreach (ProfileEntry p in snap.Profiles.Where(p => !snap.Accounts[p.Name].SignedIn))
+            content.Children.Add(Banner(Neu.P.Warn, p.Name + " has no account yet",
+                "Every profile needs its own Claude account. Sign in now, or remove it if you don't need it.",
+                Btn("Sign in to " + p.Name, true, () => _ = SignInWindow.Show(Owner, p, isNew: false, () => Reload(true))),
+                Btn("Remove", false, () => _ = RemoveProfile(p))));
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (ProfileEntry p in snap.Profiles)
+        {
+            AccountInfo a = snap.Accounts[p.Name];
+            if (!a.SignedIn || a.Uuid == null || !seen.Add(a.Uuid)) continue;
+            var same = snap.Profiles.Where(q => q != p && snap.Accounts[q.Name].SignedIn &&
+                                                string.Equals(snap.Accounts[q.Name].Uuid, a.Uuid, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (same.Count == 0) continue;
+            ProfileEntry q = same[^1];
+            content.Children.Add(Banner(Neu.P.Bad, p.Name + " and " + Describe(same.Select(x => x.Name)) + " use the same account",
+                (a.Email ?? "One account") + " is signed in to both, so they share one usage limit. Sign " + q.Name + " in to a different account.",
+                Btn("Sign " + q.Name + " in again", true, () => _ = SignInWindow.Show(Owner, q, isNew: false, () => Reload(true)))));
+        }
+    }
+
+    void BuildLinkBanners(bool transfers = true)
     {
         // Linked computers: transfers waiting here, and requests to link.
         foreach (LinkMessage m in Demo.On ? Demo.LinkInbox : Link.Inbox)
         {
             LinkMessage msg = m;
+            if (m.Kind != "link" && !transfers) continue;
+            if (m.Kind != "link" && !m.Complete)
+            {
+                int pct = m.Parts > 0 ? m.Received * 100 / m.Parts : 0;
+                content.Children.Add(Banner(Neu.P.Accent, m.Name + " is sending you " + Describe(m.Profiles) + "  " + m.ShortId,
+                    "Uploading: " + pct + "% of " + (m.Size / 1024.0 / 1024.0).ToString("0.0") + " MB" +
+                    (m.UploadRate > 0 ? " at " + (m.UploadRate / 1024 / 1024).ToString("0.00") + " MB/s" : "") + ". You can receive it as soon as it's all there.",
+                    Btn("See transfers", false, () => Show("linked"), 12.5)));
+                continue;
+            }
             if (m.Kind == "link")
                 content.Children.Add(Banner(Neu.P.Accent, m.Name + " wants to link with this computer",
                     "Its address is " + LinkCrypto.Format(m.From) + ". Accept if that's your computer and the address matches what it shows; then either one can send the other profiles.",
@@ -397,7 +537,7 @@ public class DashboardView : Border
                     Btn("Decline", false, async () => { try { await Link.Decline(msg); } catch (LinkException) { } Reload(true); }),
                     Btn("Copy its address", false, () => _ = LinkUi.Copy(Owner, msg.From), 12.5)));
             else
-                content.Children.Add(Banner(Neu.P.Accent, m.Name + " sent you " + Describe(m.Profiles) + (m.Profiles.Count == 1 ? "" : " profiles"),
+                content.Children.Add(Banner(Neu.P.Accent, m.Name + " sent you " + Describe(m.Profiles) + (m.Profiles.Count == 1 ? "" : " profiles") + "  " + m.ShortId,
                     (m.Size / 1024.0 / 1024.0).ToString("0.0") + " MB, sent " + Accounts.Ago(m.Created) + ", end-to-end encrypted. Receive imports it straight away; " +
                     "nothing on this computer is overwritten. It waits until " + m.Expires.ToString("ddd d MMM", CultureInfo.InvariantCulture) + ".",
                     Btn(m.Complete ? "Receive" : "Still uploading…", true, () => { if (msg.Complete) _ = LinkUi.Receive(Owner, msg, () => Reload(true)); }),
@@ -535,7 +675,32 @@ public class DashboardView : Border
         status.Children.Add(Neu.T(state, 13, stateColor, FontWeight.SemiBold));
         DockPanel.SetDock(status, Dock.Right);
         top.Children.Add(status);
-        top.Children.Add(Neu.Heading(p.Name, 19));
+        // The name, with a pencil to rename it (double-clicking the name works too).
+        var nameRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var heading = Neu.Heading(p.Name, Neu.Dense ? 17 : 19);
+        heading.TextWrapping = TextWrapping.NoWrap;
+        heading.TextTrimming = TextTrimming.CharacterEllipsis;
+        heading.DoubleTapped += (_, _) => _ = ProfileActions.Rename(Owner, snap, p, () => Reload(true));
+        nameRow.Children.Add(heading);
+        var pencil = new Border
+        {
+            Width = 26, Height = 26, CornerRadius = new CornerRadius(8), Background = Brushes.Transparent, Focusable = true,
+            VerticalAlignment = VerticalAlignment.Center, Cursor = new Cursor(StandardCursorType.Hand),
+            Child = new Avalonia.Controls.Shapes.Path
+            {
+                Data = Geometry.Parse("M2,12 L2,14 L4,14 L12.5,5.5 L10.5,3.5 Z M11.5,2.5 L13.5,4.5"), Stroke = Neu.B(Neu.P.Muted), StrokeThickness = 1.4,
+                StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round, Width = 16, Height = 16, Stretch = Stretch.None,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            },
+        };
+        ToolTip.SetTip(pencil, "Rename " + p.Name);
+        AutomationProperties.SetName(pencil, "Rename " + p.Name);
+        pencil.PointerEntered += (_, _) => pencil.Background = Neu.B(Neu.P.Hover);
+        pencil.PointerExited += (_, _) => pencil.Background = Brushes.Transparent;
+        pencil.PointerPressed += (_, e) => { e.Handled = true; _ = ProfileActions.Rename(Owner, snap, p, () => Reload(true)); };
+        pencil.KeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space) { e.Handled = true; _ = ProfileActions.Rename(Owner, snap, p, () => Reload(true)); } };
+        nameRow.Children.Add(pencil);
+        top.Children.Add(nameRow);
         s.Children.Add(top);
 
         var who = Neu.Field("Account", a.SignedIn ? a.Email ?? "Signed in" : "Open it and sign in", a.SignedIn ? null : Neu.P.Muted);
@@ -583,7 +748,8 @@ public class DashboardView : Border
 
         var row = new WrapPanel();
         void Add(Control c) { c.Margin = new Thickness(0, 0, 8, 8); row.Children.Add(c); }
-        Add(Btn(pid != 0 ? "Switch to" : "Open", true, () => { Launcher.Activate(p, snap.Pid(p)); Later(() => { }, 5000); }));
+        if (!a.SignedIn) Add(Btn("Sign in", true, () => _ = SignInWindow.Show(Owner, p, isNew: false, () => Reload(true))));
+        else Add(Btn(pid != 0 ? "Switch to" : "Open", true, () => { Launcher.Activate(p, snap.Pid(p)); Later(() => { }, 5000); }));
         var paste = Btn("Paste report", false, () => _ = PasteReport(p));
         ToolTip.SetTip(paste, "Copy the usage report in this profile's Claude window, then click here.");
         Add(paste);
@@ -610,7 +776,7 @@ public class DashboardView : Border
     {
         int shown = b?.Shown ?? -1;
         var s = new StackPanel { HorizontalAlignment = HorizontalAlignment.Stretch, Spacing = 2 };
-        var ring = new Ring(shown, 100, 5, null, label) { HorizontalAlignment = HorizontalAlignment.Center };
+        var ring = new Ring(shown, Neu.Dense ? 80 : 100, 5, null, label) { HorizontalAlignment = HorizontalAlignment.Center };
         s.Children.Add(ring);
         string reset = b?.ResetText ?? "";
         if (reset.Length > 0)
@@ -825,9 +991,12 @@ public class DashboardView : Border
             n => !Platform.ValidProfileName(n) ? "Use letters, numbers, spaces, - _ or . (up to 40 characters)."
                : Profiles.Find(snap.Profiles, n.Trim()) != null ? "There's already a profile with that name." : null);
         if (name == null) return;
-        try { ProfileSetup.AddOne(name, separateMemory: true); }
-        catch (Exception ex) { await Dialogs.Info(Owner, "Couldn't add the profile", ex.Message); }
+        ProfileEntry added;
+        try { added = ProfileSetup.AddOne(name.Trim(), separateMemory: true); }
+        catch (Exception ex) { await Dialogs.Info(Owner, "Couldn't add the profile", ex.Message); return; }
         Reload(true);
+        // Straight into its own Claude window to sign in: no profile without an account.
+        await SignInWindow.Show(Owner, added, isNew: true, () => Reload(true));
     }
 
     // The "More…" menu on a profile card.

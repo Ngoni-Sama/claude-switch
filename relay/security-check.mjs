@@ -107,6 +107,14 @@ r = await call('PUT', `/v1/mail/${victim.addr}/${sent.id}/0`, { body: new Uint8A
 const part = await call('GET', `/v1/mail/${victim.addr}/${sent.id}/0`, { secret: victim.secret });
 expect('overwrite a part already uploaded, even with the token', Buffer.from(part.body, 'latin1').equals(Buffer.from([1, 2, 3, 4])), 'part changed');
 
+// 5b. The sender's resume/cancel routes need that transfer's upload token.
+r = await call('GET', `/v1/mail/${victim.addr}/${sent.id}`, { headers: { 'x-upload-token': b64(crypto.getRandomValues(new Uint8Array(24))) } });
+expect('read transfer status with a guessed upload token', r.status === 403, r.status + ' ' + r.body.slice(0, 80));
+r = await call('DELETE', `/v1/mail/${victim.addr}/${sent.id}`, { headers: { 'x-upload-token': b64(crypto.getRandomValues(new Uint8Array(24))) } });
+expect('cancel someone else\'s transfer with a guessed upload token', (await call('GET', '/v1/mail/' + victim.addr, { secret: victim.secret })).body.includes(sent.id), 'transfer gone');
+r = await call('GET', `/v1/mail/${victim.addr}/${sent.id}`, { headers: { 'x-upload-token': sent.uploadToken } });
+check('the real sender sees which parts arrived', r.status === 200 && JSON.parse(r.body).have.join() === '0', r.status + ' ' + r.body);
+
 // 6. Injection through the path.
 r = await call('GET', "/v1/mail/" + encodeURIComponent("' OR 1=1 --"), { secret: attacker.secret });
 expect('SQL injection in the address', r.status === 400, r.status);

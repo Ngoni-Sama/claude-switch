@@ -26,6 +26,8 @@
 //   GET    /v1/mail/:me                    Authorization: Mailbox <secret> -> { messages }
 //   GET    /v1/mail/:me/:id/:n             Authorization -> raw bytes
 //   DELETE /v1/mail/:me/:id                Authorization
+//   GET    /v1/mail/:to/:id                X-Upload-Token -> { parts, received, have }   (sender: resume)
+//   DELETE /v1/mail/:to/:id                X-Upload-Token                                (sender: cancel)
 
 const MAX_PART = 1_000_000;            // D1 rows hold up to 2 MB; stay well under
 const MAX_SIZE = 1024 * 1024 * 1024;   // 1 GB per transfer
@@ -180,13 +182,31 @@ async function putPart(env, req, to, id, n) {
   return json({ ok: true });
 }
 
+// The sender, holding its upload token: which parts the relay already has
+// (so an interrupted upload resumes instead of starting over), or cancel.
+async function senderMessage(env, req, to, id) {
+  const msg = await env.DB.prepare('SELECT parts, received, upload_hash, created, expires FROM message WHERE id = ? AND to_addr = ?').bind(id, to).first();
+  if (!msg) return fail(404, 'no such message');   // collected, declined or expired
+  const token = req.headers.get('x-upload-token') || '';
+  if (hex(await sha256(b64d(token))) !== msg.upload_hash) return fail(403, 'bad upload token');
+  if (req.method === 'DELETE') {
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM part WHERE msg_id = ?').bind(id),
+      env.DB.prepare('DELETE FROM message WHERE id = ?').bind(id),
+    ]);
+    return json({ ok: true });
+  }
+  const have = await env.DB.prepare('SELECT n FROM part WHERE msg_id = ? ORDER BY n').bind(id).all();
+  return json({ id, parts: msg.parts, received: msg.received, have: have.results.map(r => r.n), created: msg.created, expires: msg.expires });
+}
+
 async function list(env, me) {
   const rows = await env.DB.prepare(`SELECT id, from_addr, header, signature, size, parts, received, created, expires
                                      FROM message WHERE to_addr = ? AND expires > ? ORDER BY created`).bind(me, now()).all();
   return json({
     messages: rows.results.map(m => ({
       id: m.id, from: m.from_addr, header: m.header, signature: m.signature, size: m.size, parts: m.parts,
-      complete: m.received >= m.parts, created: m.created, expires: m.expires,
+      received: m.received, complete: m.received >= m.parts, created: m.created, expires: m.expires,
     })),
   });
 }
@@ -226,6 +246,7 @@ export default {
       if (p[1] === 'mail') {
         if (p.length === 3 && req.method === 'POST') return post(env, req, addr);
         if (p.length === 5 && req.method === 'PUT') return putPart(env, req, addr, p[3], Number(p[4]));
+        if (p.length === 4 && req.headers.has('x-upload-token') && ['GET', 'DELETE'].includes(req.method)) return senderMessage(env, req, addr, p[3]);
         if (!await authorized(env, req, addr, p.length === 3)) return fail(401, 'not your mailbox');
         if (p.length === 3 && req.method === 'GET') return list(env, addr);
         if (p.length === 5 && req.method === 'GET') return getPart(env, addr, p[3], Number(p[4]));

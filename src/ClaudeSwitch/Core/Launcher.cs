@@ -143,11 +143,13 @@ public static class Launcher
     }
 
     // Launch in a separate process so the UI never blocks on the wait-for-window loop.
-    public static void Spawn(ProfileEntry p)
+    // firstSignIn: the sign-in window already explained it, so skip the confirm.
+    public static void Spawn(ProfileEntry p, bool firstSignIn = false)
     {
         var psi = new ProcessStartInfo(Platform.ExePath) { UseShellExecute = false };
         psi.ArgumentList.Add("--launch-dir");
         psi.ArgumentList.Add(p.LaunchDir);
+        if (firstSignIn) psi.ArgumentList.Add("--no-confirm");
         if (!string.IsNullOrEmpty(p.ConfigDir)) { psi.ArgumentList.Add("--config"); psi.ArgumentList.Add(p.Config); }
         Process.Start(psi);
     }

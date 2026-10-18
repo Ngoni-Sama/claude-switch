@@ -78,7 +78,7 @@ public static class Program
 
         // Command-line launches show dialogs (errors, first sign-in) on demand.
         Launcher.ShowError = Dialogs.ErrorSync;
-        Launcher.ConfirmFirstSignIn = Dialogs.FirstSignInSync;
+        Launcher.ConfirmFirstSignIn = Has(args, "--no-confirm") ? _ => true : Dialogs.FirstSignInSync;
         LinkRouter.PickProfile = Dialogs.PickSync;
 
         string link = Arg(args, "--link");

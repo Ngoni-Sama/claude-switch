@@ -162,22 +162,39 @@ public class LinkEndToEndTests : IDisposable
         // A profile with Claude Desktop settings in it.
         string data = Path.Combine(root, "profile-data");
         Directory.CreateDirectory(data);
-        // ~3 MB that doesn't compress, so the transfer spans several parts sent in parallel.
-        string bulk = Convert.ToBase64String(RandomNumberGenerator.GetBytes(2_400_000));
+        // ~6 MB that doesn't compress, so the transfer spans two batches of parallel parts.
+        string bulk = Convert.ToBase64String(RandomNumberGenerator.GetBytes(4_800_000));
         File.WriteAllText(Path.Combine(data, "claude_desktop_config.json"), "{\"mcpServers\":{\"files\":{\"command\":\"npx\"}},\"bulk\":\"" + bulk + "\"}");
         var reports = new List<LinkProgress>();
         File.WriteAllText(Path.Combine(data, "config.json"), "{\"oauth:tokenCacheV2\":\"SECRET\",\"theme\":\"dark\"}");
         var profile = new ProfileEntry { Name = "Work", DataDir = data };
-        long size = await Link.SendProfiles(peer, new ExportOptions
-        {
-            Profiles = { profile }, Sessions = false, Memory = false, CodeConfig = false, DesktopSettings = true,
-        }, p => { lock (reports) reports.Add(p); });
-        Assert.True(size > 2_000_000, "transfer was " + size);
-        Assert.Contains(reports, r => r.Total == size && r.Done == size);   // progress reached 100%
+        ExportOptions Options() => new() { Profiles = { profile }, Sessions = false, Memory = false, CodeConfig = false, DesktopSettings = true };
+
+        // The connection drops after the first parts are up...
+        var stop = new CancellationTokenSource();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            Link.SendProfiles(peer, Options(), p => { if (p.Done > 0 && p.Done < p.Total) stop.Cancel(); }, stop.Token));
+        Outgoing half = Assert.Single(Link.Outgoings());
+        Assert.True(half.Uploading);
+
+        // ...and sending again resumes the same transfer instead of starting another.
+        Outgoing sent = await Link.SendProfiles(peer, Options(), p => { lock (reports) reports.Add(p); });
+        Assert.Equal(half.Id, sent.Id);
+        Assert.Equal("waiting", sent.State);
+        Assert.True(sent.Size > 2_000_000, "transfer was " + sent.Size);
+        Assert.True(reports.First(r => r.Total > 0).Done > 0, "resumed from where it stopped");
+        Assert.Contains(reports, r => r.Total == sent.Size && r.Done == sent.Size);   // progress reached 100%
+
+        // Sending the same profiles again replaces the copy waiting there: still one.
+        Outgoing again = await Link.SendProfiles(peer, Options(), null);
+        Assert.NotEqual(sent.Id, again.Id);
+        Assert.Equal(again.Id, Assert.Single(Link.Outgoings()).Id);
 
         As("harare");
         await Link.Refresh();
         LinkMessage transfer = Assert.Single(Link.Inbox);
+        Assert.Equal(again.Id, transfer.Id);
+        Assert.Equal(again.ShortId, transfer.ShortId);   // same #ID on both computers
         Assert.Equal("transfer", transfer.Kind);
         Assert.Equal("London laptop", transfer.Name);
         Assert.Equal(new[] { "Work" }, transfer.Profiles);
