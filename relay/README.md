@@ -32,6 +32,9 @@ Use another relay**, and enter your relay's address (for example
 `https://claude-switch-relay.<you>.workers.dev`). All linked computers must use
 the same relay.
 
+The public relay (`claude-switch-relay.ma360-ngoni.workers.dev`) deploys itself from
+this folder on every push to `main`, through Cloudflare Workers Builds.
+
 ## Run it anywhere else
 
 ```bash
